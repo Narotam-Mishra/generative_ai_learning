@@ -1102,6 +1102,294 @@ response = agent.invoke("Multiply today's Delhi temperature by 3")
 
 ## 05. LangChain Models (01:42:02)
 
+## 🧑‍🏫 What This Video Covers
+
+This lecture deep into the **Models component** of LangChain – the most important component. He explains:
+- What are Models in LangChain (interface to AI models)
+- Two types: **Language Models** (text ↔ text) and **Embedding Models** (text → vector)
+- Language models further split into **LLMs** (older, general-purpose) and **Chat Models** (newer, conversation-focused)
+- How to use **closed-source models** (OpenAI, Anthropic, Google)
+- How to use **open-source models** (via Hugging Face API or locally)
+- How to use **embedding models** for semantic search
+- Build a **document similarity search app** from scratch
+
+---
+
+## ✅ Important Pointers (Key Takeaways)
+
+1. **Models component** = a standardized interface to talk to any AI model (LLM or embedding model)
+2. **Two model types:**
+   - **Language models** – text in → text out (chatbots, agents, summarization)
+   - **Embedding models** – text in → vector (numbers) out (semantic search, RAG)
+3. **Language models → two sub-types:**
+   - **LLMs** (e.g., `gpt-3.5-turbo-instruct`) – old, general purpose, being deprecated
+   - **Chat Models** (e.g., `gpt-4`, `claude`, `gemini`) – newer, support conversation history, roles, recommended
+4. **Key parameters for chat models:**
+   - `temperature` – controls creativity (0 = deterministic, 1.5 = creative)
+   - `max_tokens` – limits output length (saves cost)
+5. **Closed-source models** – paid APIs (OpenAI, Anthropic, Google). LangChain gives a consistent interface – swap models with minimal code changes.
+6. **Open-source models** – free, downloadable from Hugging Face. You can run them locally (need good GPU/CPU) or via Hugging Face Inference API (free tier available).
+7. **Embedding models** convert text to vectors. Use `embed_query()` for a single text, `embed_documents()` for multiple.
+8. **Cosine similarity** measures how similar two vectors are – used to find which document best matches a query.
+9. **Setup:** create virtual env, install `langchain`, `langchain-openai`, `langchain-anthropic`, `langchain-google-genai`, `langchain-huggingface`, `python-dotenv`, `scikit-learn`, `numpy`.
+10. **Always store API keys in `.env` file** (never hardcode).
+
+---
+
+## 📚 Important Concepts Explained (with Code Examples)
+
+### 1. What Are Models in LangChain?
+
+> **Definition:** The Models component is an interface that lets you interact with different AI models (language or embedding) in a standardized way – same code pattern for OpenAI, Anthropic, or open-source models.
+
+**Why needed?** Each LLM provider has a different API. LangChain standardizes it.
+
+---
+
+### 2. Language Models: LLMs vs Chat Models
+
+| Feature | LLM (Old) | Chat Model (New) |
+|---------|-----------|------------------|
+| Input | Single string | List of messages (system, user, AI) |
+| Output | Single string | Message object with content + metadata |
+| Memory | No | Supports conversation history |
+| Roles | No | Yes (system, user, assistant) |
+| Recommendation | Deprecated | Use this |
+
+**LLM example (not recommended for new projects):**
+```python
+from langchain_openai import OpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
+llm = OpenAI(model="gpt-3.5-turbo-instruct")
+result = llm.invoke("What is the capital of India?")
+print(result)  # "New Delhi"
+```
+
+**Chat Model example (recommended):**
+```python
+from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
+model = ChatOpenAI(model="gpt-4")
+response = model.invoke("What is the capital of India?")
+print(response.content)  # "The capital of India is New Delhi."
+```
+
+---
+
+### 3. Chat Model Parameters: Temperature & Max Tokens
+
+**Temperature** – controls randomness/creativity:
+- 0.0 – deterministic, factual answers (good for code, math)
+- 0.5–0.7 – balanced
+- 1.0–1.5 – creative, varied (good for stories, jokes)
+
+**Max tokens** – limits output length (saves money).
+
+```python
+model = ChatOpenAI(
+    model="gpt-4",
+    temperature=0.0,      # factual
+    max_tokens=50          # short answer
+)
+```
+
+---
+
+### 4. Using Different Closed-Source Models (OpenAI, Anthropic, Google)
+
+**OpenAI (GPT-4):**
+```python
+from langchain_openai import ChatOpenAI
+model = ChatOpenAI(model="gpt-4")
+```
+
+**Anthropic (Claude):** (need `ANTHROPIC_API_KEY` in `.env`)
+```python
+from langchain_anthropic import ChatAnthropic
+model = ChatAnthropic(model="claude-3-sonnet-20240229")
+```
+
+**Google (Gemini):** (need `GOOGLE_API_KEY` in `.env`)
+```python
+from langchain_google_genai import ChatGoogleGenerativeAI
+model = ChatGoogleGenerativeAI(model="gemini-1.5-pro")
+```
+
+**Notice:** The `invoke()` method and response structure are the same across all – only the import and model name change.
+
+---
+
+### 5. Open-Source Models via Hugging Face
+
+**Two ways to use open-source models:**
+
+#### A. Via Hugging Face Inference API (free tier, runs on HF servers)
+```python
+from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
+from dotenv import load_dotenv
+
+load_dotenv()  # needs HUGGINGFACEHUB_ACCESS_TOKEN
+
+llm = HuggingFaceEndpoint(
+    repo_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    task="text-generation"
+)
+model = ChatHuggingFace(llm=llm)
+response = model.invoke("What is the capital of India?")
+print(response.content)
+```
+
+#### B. Locally downloaded (runs on your machine – needs good hardware)
+```python
+from langchain_huggingface import ChatHuggingFace, HuggingFacePipeline
+from transformers import pipeline
+
+llm = HuggingFacePipeline.from_model_id(
+    model_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    task="text-generation",
+    pipeline_kwargs={"max_new_tokens": 100, "temperature": 0.5}
+)
+model = ChatHuggingFace(llm=llm)
+response = model.invoke("What is the capital of India?")
+print(response.content)
+```
+
+**Note:** First run downloads the model (~500MB). Local inference is slower on CPU.
+
+---
+
+### 6. Embedding Models
+
+**What they do:** Convert text into a vector (list of numbers) that captures meaning.
+
+**Why useful:** To perform semantic search – find text that is *similar in meaning*, not just keywords.
+
+**Using OpenAI Embeddings (closed-source):**
+```python
+from langchain_openai import OpenAIEmbeddings
+from dotenv import load_dotenv
+
+load_dotenv()
+embeddings = OpenAIEmbeddings(
+    model="text-embedding-3-large",
+    dimensions=300       # vector size (can be up to 3072)
+)
+
+# Single text
+vector = embeddings.embed_query("Delhi is the capital of India")
+print(len(vector))      # 300
+
+# Multiple documents
+docs = [
+    "Delhi is capital of India",
+    "Kolkata is capital of West Bengal",
+    "Paris is capital of France"
+]
+vectors = embeddings.embed_documents(docs)
+print(len(vectors))     # 3
+print(len(vectors[0]))  # 300
+```
+
+**Using open-source embeddings (HuggingFace, locally):**
+```python
+from langchain_huggingface import HuggingFaceEmbeddings
+
+embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2"  # 384-dim vectors
+)
+vector = embeddings.embed_query("Delhi is the capital of India")
+print(len(vector))  # 384
+```
+
+---
+
+### 7. Document Similarity Search (Complete Example)
+
+**Goal:** Given a set of documents and a user query, find which document is most semantically similar to the query.
+
+**How it works:**
+1. Generate embeddings for all documents (vectors)
+2. Generate embedding for the query
+3. Compute cosine similarity between query vector and each document vector
+4. Return the document with highest similarity score
+
+```python
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from langchain_openai import OpenAIEmbeddings
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Step 1: Documents
+documents = [
+    "Virat Kohli is an Indian cricketer known for aggressive batting.",
+    "Jasprit Bumrah is an Indian fast bowler with a unique action.",
+    "Rohit Sharma holds the record for highest ODI score of 264.",
+    "MS Dhoni is famous for his captaincy and finishing skills.",
+    "Sachin Tendulkar is the highest run-scorer in Test cricket."
+]
+
+# Step 2: User query
+query = "Tell me about Virat Kohli"
+
+# Step 3: Create embeddings
+embeddings = OpenAIEmbeddings(model="text-embedding-3-large", dimensions=300)
+doc_embeddings = embeddings.embed_documents(documents)   # list of 5 vectors
+query_embedding = embeddings.embed_query(query)          # 1 vector
+
+# Step 4: Compute cosine similarity (convert to 2D for sklearn)
+query_2d = np.array(query_embedding).reshape(1, -1)
+doc_2d = np.array(doc_embeddings)
+scores = cosine_similarity(query_2d, doc_2d)[0]  # array of 5 similarity scores
+
+# Step 5: Find best match
+best_index = np.argmax(scores)
+best_score = scores[best_index]
+best_doc = documents[best_index]
+
+print(f"Query: {query}")
+print(f"Best match: {best_doc}")
+print(f"Similarity score: {best_score:.2f}")
+```
+
+**Output:**
+```
+Query: Tell me about Virat Kohli
+Best match: Virat Kohli is an Indian cricketer known for aggressive batting.
+Similarity score: 0.66
+```
+
+> This is the core idea behind **RAG (Retrieval-Augmented Generation)** – you’d then feed the retrieved document to an LLM to answer the query.
+
+---
+
+## 🔁 Summary Table
+
+| Concept | What it does | Code snippet |
+|---------|--------------|---------------|
+| **LLM (old)** | Text in → text out | `OpenAI(model="gpt-3.5-turbo-instruct")` |
+| **Chat Model** | Messages in → message out | `ChatOpenAI(model="gpt-4")` |
+| **Temperature** | Controls creativity | `temperature=0.7` |
+| **Max tokens** | Limits output length | `max_tokens=100` |
+| **Open-source (API)** | Free, runs on HF servers | `HuggingFaceEndpoint(repo_id="...")` |
+| **Open-source (local)** | Runs on your machine | `HuggingFacePipeline.from_model_id(...)` |
+| **Embeddings (closed)** | Text → vector | `OpenAIEmbeddings().embed_query("text")` |
+| **Embeddings (open)** | Text → vector | `HuggingFaceEmbeddings(model_name="...")` |
+| **Cosine similarity** | Measure vector similarity | `cosine_similarity(query_vec, doc_vecs)` |
+
+---
+
+> **Final takeaway:** The Models component is your gateway to all AI models in LangChain. Master the difference between LLMs and Chat Models, learn to switch between providers, and understand embeddings – they are the foundation of semantic search and RAG.
+
 - [Hugging Face Models](https://huggingface.co/models)
+
+---
+
+## 06. Prompts in LangChain (01:18:32)
 
 summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
