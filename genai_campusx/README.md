@@ -1102,4 +1102,6 @@ response = agent.invoke("Multiply today's Delhi temperature by 3")
 
 ## 05. LangChain Models (01:42:02)
 
+- [Hugging Face Models](https://huggingface.co/models)
+
 summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
