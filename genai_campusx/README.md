@@ -1392,4 +1392,303 @@ Similarity score: 0.66
 
 ## 06. Prompts in LangChain (01:18:32)
 
+## 🧑‍🏫 What This Covers
+
+It covers the **Prompts component** in LangChain – the second most important component after Models whcih contains:
+- What prompts are (text input to LLM)
+- **Static vs Dynamic prompts** – why dynamic is better
+- **PromptTemplate** – creating reusable, dynamic single-message prompts
+- **Saving & loading prompts** to JSON files for reusability
+- Building a simple **chat bot** with conversation history
+- **Message types** – SystemMessage, HumanMessage, AIMessage
+- **ChatPromptTemplate** – dynamic prompts for multi-message conversations
+- **MessagePlaceholder** – inserting chat history dynamically
+
+---
+
+## ✅ Important Pointers (Key Takeaways)
+
+1. **Prompt** = the input message/text you send to an LLM. LLM outputs are very sensitive to prompts.
+2. **Static prompts** – user types full prompt every time. Problem: inconsistent output, user can make mistakes, no control.
+3. **Dynamic prompts** – you create a template with placeholders, user only provides values (e.g., paper name, style, length). Gives consistent experience.
+4. **PromptTemplate** – LangChain class for dynamic single-message prompts. Provides validation, reusability, and integration with Chains.
+5. **Why not just use f-strings?** PromptTemplate gives: (a) automatic validation of placeholders, (b) ability to save/load templates as JSON, (c) seamless integration with LangChain Chains.
+6. **Chat bot with memory** – need to maintain chat history and send it back to LLM for context.
+7. **Message types in LangChain:**
+   - `SystemMessage` – sets assistant's role/behavior (start of conversation)
+   - `HumanMessage` – user's input
+   - `AIMessage` – assistant's response
+8. **ChatPromptTemplate** – used when you need dynamic placeholders inside a list of messages (multi-turn conversations).
+9. **MessagePlaceholder** – a special placeholder that injects an entire list of messages (e.g., previous chat history) at runtime.
+10. **Temperature correction:** Temperature 0 = deterministic (same input → same output). Higher values = more creative/random outputs.
+
+---
+
+## 📚 Important Concepts Explained (with Code Examples)
+
+### 1. What is a Prompt?
+
+> **Definition:** The text message you send to an LLM. It can be a simple question, a complex instruction, or include examples.
+
+**Simple example (hardcoded static prompt):**
+```python
+from langchain_openai import ChatOpenAI
+
+model = ChatOpenAI()
+response = model.invoke("What is the capital of India?")
+print(response.content)
+```
+
+---
+
+### 2. Static vs Dynamic Prompts
+
+**Problem with static prompts:** User writes the whole prompt. If they misspell or write unclearly, output is bad. Also, you can't guarantee consistent style.
+
+**Dynamic prompt approach:** Create a template with placeholders; user only fills specific values.
+
+**Example – Research summarizer tool (conceptual UI):**
+```python
+# Template (pre-defined by developer)
+template = """
+Please summarize the research paper titled {paper_name} with the following specifications:
+- Explanation style: {style}
+- Explanation length: {length}
+Include mathematical details if present. Use simple analogies.
+"""
+
+# User selects: paper_name = "Attention Is All You Need", style = "simple", length = "short"
+```
+
+---
+
+### 3. PromptTemplate Class
+
+**Why use PromptTemplate instead of f-strings?**
+- Automatic validation of placeholders
+- Save/load templates as JSON (reusability)
+- Works seamlessly with LangChain Chains
+
+**Basic usage:**
+```python
+from langchain_core.prompts import PromptTemplate
+
+template = PromptTemplate(
+    input_variables=["topic", "tone"],
+    template="Explain {topic} in a {tone} tone."
+)
+
+# Fill placeholders
+final_prompt = template.format(topic="cricket", tone="funny")
+print(final_prompt)
+# Output: "Explain cricket in a funny tone."
+```
+
+**Validation example – missing placeholder:**
+```python
+template = PromptTemplate(
+    input_variables=["topic", "tone"],
+    template="Explain {topic} in a {tone} tone."
+)
+# This will raise an error because "tone" is missing
+final_prompt = template.format(topic="cricket")  # KeyError
+```
+
+---
+
+### 4. Saving and Loading PromptTemplates
+
+**Save template to JSON:**
+```python
+from langchain_core.prompts import PromptTemplate
+
+template = PromptTemplate(
+    input_variables=["paper_name", "style", "length"],
+    template="Summarize {paper_name} in {style} style, length: {length}."
+)
+template.save("my_template.json")
+```
+
+**Load template from JSON:**
+```python
+from langchain_core.prompts import load_prompt
+
+template = load_prompt("my_template.json")
+final_prompt = template.format(paper_name="Attention Paper", style="simple", length="short")
+```
+
+---
+
+### 5. Simple Chat Bot with Manual History (Without Message Types)
+
+**Problem:** LLM has no memory of previous messages.
+
+```python
+from langchain_openai import ChatOpenAI
+
+model = ChatOpenAI()
+chat_history = []  # list of strings
+
+while True:
+    user_input = input("You: ")
+    if user_input.lower() == "exit":
+        break
+    chat_history.append(user_input)  # missing role info!
+    response = model.invoke("\n".join(chat_history))
+    print(f"AI: {response.content}")
+    chat_history.append(response.content)
+```
+
+**Issue:** The LLM doesn't know who said what (user vs AI) – leads to confusion.
+
+---
+
+### 6. Message Types in LangChain
+
+LangChain provides three message classes to label who said what:
+
+| Message Type | Purpose | Example |
+|--------------|---------|---------|
+| `SystemMessage` | Set assistant's behavior (start of conversation) | `"You are a helpful AI assistant."` |
+| `HumanMessage` | User's input | `"Tell me about LangChain."` |
+| `AIMessage` | Assistant's response | `"LangChain is a framework..."` |
+
+**Example – using message classes:**
+```python
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_openai import ChatOpenAI
+
+model = ChatOpenAI()
+
+messages = [
+    SystemMessage(content="You are a helpful AI assistant."),
+    HumanMessage(content="Tell me about LangChain."),
+]
+
+response = model.invoke(messages)
+print(response.content)  # AIMessage
+
+# Add AI response to history
+messages.append(AIMessage(content=response.content))
+```
+
+---
+
+### 7. ChatPromptTemplate (Dynamic Multi-Message Prompts)
+
+Use when you need dynamic placeholders inside a list of messages.
+
+**Example – dynamic system role and user topic:**
+```python
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import SystemMessage, HumanMessage
+
+# Create template with placeholders
+chat_template = ChatPromptTemplate.from_messages([
+    SystemMessage(content="You are a helpful {domain} expert."),
+    HumanMessage(content="Explain in simple terms: What is {topic}?")
+])
+
+# Fill placeholders (using dictionary in invoke)
+final_messages = chat_template.invoke({
+    "domain": "cricket",
+    "topic": "LBW rule"
+})
+
+print(final_messages)
+# Output: [SystemMessage(content="You are a helpful cricket expert."),
+#          HumanMessage(content="Explain in simple terms: What is LBW rule?")]
+```
+
+**Note:** In LangChain v3, use `.invoke()` with a dict, not `.format()`.
+
+---
+
+### 8. MessagePlaceholder (Insert Chat History)
+
+**Problem:** You have previous conversation history stored in a database. You want to inject it into the prompt at runtime.
+
+**Solution:** `MessagePlaceholder` – a placeholder that gets replaced by a list of messages.
+
+**Example – Customer support with history:**
+```python
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+
+# Previous chat history (loaded from DB)
+chat_history = [
+    HumanMessage(content="I want a refund for order #12345"),
+    AIMessage(content="Your refund request has been initiated. It will take 3-5 business days.")
+]
+
+# Current user query
+current_query = HumanMessage(content="Where is my refund?")
+
+# Create template with a placeholder for history
+template = ChatPromptTemplate.from_messages([
+    SystemMessage(content="You are a helpful customer support agent."),
+    MessagesPlaceholder(variable_name="chat_history"),   # history will be injected here
+    HumanMessage(content="{current_query}")
+])
+
+# Fill the template
+final_messages = template.invoke({
+    "chat_history": chat_history,
+    "current_query": "Where is my refund?"
+})
+
+print(final_messages)
+# Output: SystemMessage + [previous history] + current query
+# Now LLM understands context of the refund request
+```
+
+---
+
+### 9. Temperature Correction
+
+**Correction from previous video:** Temperature does not directly control creativity vs determinism in a linear way. Instead:
+
+- **Temperature = 0** – same input always gives the same output (deterministic)
+- **Higher temperature** – more random/creative, same input can give different outputs
+
+```python
+from langchain_openai import ChatOpenAI
+
+# Deterministic – same output every time
+model = ChatOpenAI(temperature=0.0)
+for _ in range(3):
+    response = model.invoke("Write a 5-line poem on cricket")
+    print(response.content)
+    print("---")
+
+# Creative – each run different
+model = ChatOpenAI(temperature=1.5)
+for _ in range(3):
+    response = model.invoke("Write a 5-line poem on cricket")
+    print(response.content)
+    print("---")
+```
+
+---
+
+## 🔁 Summary Table
+
+| Concept | When to use | Key code |
+|---------|-------------|-----------|
+| **PromptTemplate** | Single dynamic message | `PromptTemplate(input_variables=[...], template=...)` |
+| **ChatPromptTemplate** | Multiple dynamic messages (conversation) | `ChatPromptTemplate.from_messages([...])` |
+| **SystemMessage** | Set assistant role/behavior | `SystemMessage(content="...")` |
+| **HumanMessage** | User input | `HumanMessage(content="...")` |
+| **AIMessage** | Assistant response | `AIMessage(content="...")` |
+| **MessagesPlaceholder** | Insert previous chat history | `MessagesPlaceholder(variable_name="history")` |
+| **save/load_prompt** | Reuse templates across files | `template.save("file.json")`, `load_prompt("file.json")` |
+
+---
+
+> **Final takeaway:** Prompts are the most sensitive part of LLM apps. Use PromptTemplate for single queries, ChatPromptTemplate for multi-turn conversations, and MessagesPlaceholder to inject history. Never use raw f-strings – you lose validation and reusability.
+
+---
+
+## 07. Structured Output in LangChain (01:08:12)
+
 summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
