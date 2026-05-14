@@ -1691,4 +1691,298 @@ for _ in range(3):
 
 ## 07. Structured Output in LangChain (01:08:12)
 
+## 🧑‍🏫 What This Video Covers
+
+This lecture explains how to get **structured output** from LLMs using LangChain – instead of plain text, you get data in a defined format (like JSON). This allows LLMs to integrate with databases, APIs, and other systems. He covers:
+- What is structured vs unstructured output
+- Why structured output is needed (data extraction, API building, agent tools)
+- Three ways to define the output schema: **TypedDict**, **Pydantic**, **JSON Schema**
+- The `with_structured_output` function
+- When to use each approach
+- Models that don't support structured output (will be covered in next video)
+
+---
+
+## ✅ Important Pointers (Key Takeaways)
+
+1. **Unstructured output** = plain text (e.g., "New Delhi is the capital of India"). Hard to use programmatically.
+2. **Structured output** = well-defined data format like JSON. Easy to parse and integrate with other systems.
+3. **Why needed?** Three main use cases:
+   - Data extraction from resumes, invoices, reviews → store in database
+   - Build APIs that return structured data
+   - Agents need structured output to call tools (e.g., extract numbers for calculator)
+4. **LangChain's solution:** `with_structured_output(schema)` – attach a schema to your model.
+5. **Three ways to define schema:**
+   - **TypedDict** – lightweight, only type hints (no runtime validation)
+   - **Pydantic** – full validation, default values, type coercion, constraints (recommended)
+   - **JSON Schema** – language-agnostic, good for multi-language projects
+6. **Method parameter:** `method="json_mode"` (for Gemini, Claude) or `method="function_calling"` (default for OpenAI).
+7. **Not all models support structured output** – open-source models like TinyLlama will need output parsers 
+
+---
+
+## 📚 Important Concepts Explained (with Code Examples)
+
+### 1. Structured vs Unstructured Output
+
+**Unstructured (plain text):**
+```python
+response = model.invoke("Give me a one-day itinerary for Paris")
+print(response.content)
+# Output: "Morning: Visit Eiffel Tower. Afternoon: Louvre Museum. Evening: Dinner cruise."
+```
+
+**Structured (JSON):**
+```json
+[
+  {"time": "Morning", "activity": "Visit Eiffel Tower"},
+  {"time": "Afternoon", "activity": "Louvre Museum"},
+  {"time": "Evening", "activity": "Dinner cruise"}
+]
+```
+
+---
+
+### 2. Basic `with_structured_output` with TypedDict
+
+**Step 1 – Define schema using TypedDict:**
+```python
+from typing import TypedDict
+
+class Review(TypedDict):
+    summary: str
+    sentiment: str   # "positive", "negative", or "neutral"
+```
+
+**Step 2 – Use it with a model:**
+```python
+from langchain_openai import ChatOpenAI
+
+model = ChatOpenAI(model="gpt-4")
+structured_model = model.with_structured_output(Review)
+
+review_text = "The battery life is amazing, but the camera is average."
+
+result = structured_model.invoke(review_text)
+print(result)        # {'summary': '...', 'sentiment': 'positive'}
+print(result["summary"])   # access like a dict
+print(result["sentiment"])
+```
+
+> **Note:** TypedDict provides **type hints only** – no runtime validation. If the LLM returns wrong data type, it won't raise an error.
+
+---
+
+### 3. Adding Descriptions (Annotations) to TypedDict
+
+Help the LLM understand each field better:
+```python
+from typing import Annotated, TypedDict
+
+class Review(TypedDict):
+    summary: Annotated[str, "A brief overview of the main points"]
+    sentiment: Annotated[str, "Overall tone: positive, negative, or neutral"]
+```
+
+---
+
+### 4. Pydantic – Full Validation & Power
+
+Pydantic gives runtime validation, default values, type coercion, and constraints.
+
+**Basic Pydantic model:**
+```python
+from pydantic import BaseModel
+
+class Student(BaseModel):
+    name: str
+    age: int
+
+# Valid
+s1 = Student(name="Nitesh", age=25)
+
+# Invalid – will raise validation error
+s2 = Student(name="Nitesh", age="twenty")  # Error!
+```
+
+**Optional fields & defaults:**
+```python
+from typing import Optional
+from pydantic import BaseModel
+
+class Student(BaseModel):
+    name: str
+    age: Optional[int] = None   # can be missing, defaults to None
+
+s = Student(name="Nitesh")
+print(s.age)   # None
+```
+
+**Default values:**
+```python
+class Student(BaseModel):
+    name: str = "Unknown"
+    age: int = 18
+
+s = Student()  # no arguments needed
+print(s.name)  # "Unknown"
+```
+
+**Type coercion (auto-conversion):**
+```python
+class Student(BaseModel):
+    age: int
+
+# Even if you pass string "25", Pydantic converts to int 25
+s = Student(age="25")
+print(s.age)        # 25
+print(type(s.age))  # <class 'int'>
+```
+
+**Field validations (constraints):**
+```python
+from pydantic import BaseModel, Field
+
+class Student(BaseModel):
+    cgpa: float = Field(ge=0, le=10, description="Decimal value representing CGPA")
+
+# Valid
+s = Student(cgpa=8.5)
+
+# Invalid
+s = Student(cgpa=12)   # ValidationError: ensure value ≤ 10
+```
+
+**Email validation (built-in):**
+```python
+from pydantic import BaseModel, EmailStr
+
+class Student(BaseModel):
+    email: EmailStr
+
+s = Student(email="abc")              # Error!
+s = Student(email="abc@gmail.com")    # Valid
+```
+
+**Convert Pydantic object to dict or JSON:**
+```python
+s = Student(name="Nitesh", age=25)
+print(s.dict())      # {'name': 'Nitesh', 'age': 25}
+print(s.json())      # '{"name": "Nitesh", "age": 25}'
+```
+
+**Using Pydantic with `with_structured_output`:**
+```python
+from pydantic import BaseModel, Field
+from langchain_openai import ChatOpenAI
+
+class Review(BaseModel):
+    summary: str = Field(description="Brief summary of the review")
+    sentiment: str = Field(description="Positive, negative, or neutral")
+
+model = ChatOpenAI(model="gpt-4")
+structured_model = model.with_structured_output(Review)
+
+result = structured_model.invoke("Great phone, amazing battery!")
+print(result.summary)    # access as attribute (Pydantic object)
+print(result.sentiment)
+```
+
+---
+
+### 5. JSON Schema (Language-Agnostic)
+
+Use when your project uses multiple languages (Python backend + JavaScript frontend).
+
+**Example JSON Schema:**
+```json
+{
+  "title": "Review",
+  "type": "object",
+  "properties": {
+    "summary": {"type": "string", "description": "Brief summary"},
+    "sentiment": {"type": "string", "enum": ["positive", "negative"]}
+  },
+  "required": ["summary", "sentiment"]
+}
+```
+
+**Using JSON Schema with LangChain:**
+```python
+json_schema = {
+    "title": "Review",
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "sentiment": {"type": "string", "enum": ["positive", "negative"]}
+    },
+    "required": ["summary", "sentiment"]
+}
+
+structured_model = model.with_structured_output(json_schema)
+result = structured_model.invoke(review_text)
+print(result)  # returns a Python dict
+```
+
+---
+
+### 6. Complete Example – Smartphone Review Analysis
+
+**Goal:** Extract themes, summary, sentiment, pros, cons, and reviewer name (optional).
+
+**Pydantic schema:**
+```python
+from typing import List, Optional
+from pydantic import BaseModel, Field
+
+class ReviewAnalysis(BaseModel):
+    themes: List[str] = Field(description="Main topics discussed")
+    summary: str = Field(description="Brief overview")
+    sentiment: str = Field(description="positive or negative")
+    pros: Optional[List[str]] = Field(default=None, description="List of pros")
+    cons: Optional[List[str]] = Field(default=None, description="List of cons")
+    reviewer_name: Optional[str] = Field(default=None, description="Name if mentioned")
+
+# Use with model
+structured_model = model.with_structured_output(ReviewAnalysis)
+review = "The Snapdragon processor is blazing fast. 5000mAh battery lasts 2 days. Only downside is the price."
+result = structured_model.invoke(review)
+
+print(result.themes)     # ['Snapdragon', 'battery']
+print(result.sentiment)  # positive
+print(result.pros)       # ['fast processor', 'long battery']
+```
+
+---
+
+### 7. Method Parameter: JSON Mode vs Function Calling
+
+```python
+# For OpenAI (default function_calling)
+structured_model = model.with_structured_output(Review, method="function_calling")
+
+# For Gemini or Claude (use json_mode)
+structured_model = model.with_structured_output(Review, method="json_mode")
+```
+
+> If your model doesn't support structured output at all (e.g., TinyLlama), you'll need **output parsers** – covered in the next video.
+
+---
+
+## 🔁 Summary Table – When to Use Which Schema
+
+| Schema | Validation | Defaults | Type Coercion | Cross-language | Best for |
+|--------|-----------|----------|---------------|----------------|-----------|
+| **TypedDict** | ❌ No | ❌ No | ❌ No | ❌ No | Quick prototypes, pure Python |
+| **Pydantic** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No | **Most Python projects** (recommended) |
+| **JSON Schema** | ✅ Yes | ✅ Yes | ❌ No | ✅ Yes | Multi-language projects |
+
+---
+
+> **Final takeaway:** Use `with_structured_output` with a Pydantic model for most Python projects. It gives you validation, defaults, and clean object access. Save JSON Schema for when you need to share the schema with non-Python code.
+
+---
+
+## 08. Output Parsers in LangChain (53:12)
+
 summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
