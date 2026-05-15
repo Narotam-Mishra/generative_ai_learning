@@ -1,0 +1,39 @@
+
+# pydantic output parser
+
+from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
+from dotenv import load_dotenv
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import PydanticOutputParser
+from pydantic import BaseModel, Field
+
+load_dotenv(override=True)
+
+llm = HuggingFaceEndpoint(
+    repo_id="meta-llama/Llama-3.2-1B-Instruct",
+    task='text-generation',
+)
+
+model = ChatHuggingFace(llm=llm)
+
+class Person(BaseModel):
+    name: str = Field(description='Name of the person')
+    age: int = Field(gt=18, description='Age of the person')
+    city: str = Field(description='Name of the city where person person belong to')
+
+parser = PydanticOutputParser(pydantic_object=Person)
+
+prompt_template = PromptTemplate(
+    template='Generate the name, age and city of a fictional {place} person \n {format_instruction}',
+    input_variables=['place'],
+    partial_variables={'format_instruction': parser.get_format_instructions()}
+)
+
+prompt = prompt_template.invoke({'place': 'india'})
+print(f"Actual Prompt: {prompt}")
+
+res = model.invoke(prompt)
+
+parsed_res = parser.parse(res.content)
+
+print(f"Main output: {parsed_res}")

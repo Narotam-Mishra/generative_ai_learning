@@ -1985,10 +1985,228 @@ structured_model = model.with_structured_output(Review, method="json_mode")
 
 ## 08. Output Parsers in LangChain (53:12)
 
-summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
+## 🧑‍🏫 What This Video Covers
+
+This lecture explains **Output Parsers** in LangChain – tools that convert raw LLM responses (unstructured text) into structured formats like strings, JSON, or Pydantic objects. This is essential for models that **don't** natively support structured output (e.g., open-source models like TinyLlama). He covers:
+- Why output parsers are needed
+- Four most important parsers: **StringOutputParser**, **JsonOutputParser**, **StructuredOutputParser**, **PydanticOutputParser**
+- How to use them with **Chains** (pipelines)
+- When to use which parser
+
+---
+
+## ✅ Important Pointers (Key Takeaways)
+
+1. **Output Parsers** = LangChain classes that convert raw LLM text responses into structured data.
+2. **Why needed?** Many LLMs (especially open-source) cannot produce structured output natively. Parsers force/extract structure from plain text.
+3. **Two types of LLMs:**
+   - Models that support structured output natively (GPT-4, Claude) → use `with_structured_output`
+   - Models that don't (TinyLlama, many open-source) → use **Output Parsers**
+4. **StringOutputParser** – extracts plain text from LLM response (removes metadata). Best used inside chains.
+5. **JsonOutputParser** – forces LLM to return JSON, but **does not enforce a schema** (structure can vary).
+6. **StructuredOutputParser** – enforces a specific JSON schema (field names and types), but **no data validation** (e.g., can't enforce age > 18).
+7. **PydanticOutputParser** – enforces schema + full data validation (types, constraints, defaults). Most powerful and recommended.
+8. **Always prefer using parsers inside Chains** – cleaner code, automatic piping.
+9. LangChain has many other parsers (CSV, list, datetime, etc.) – check documentation.
+
+---
+
+## 📚 Important Concepts Explained (with Code Examples)
+
+### 1. The Problem – Raw LLM Response Contains Metadata
+
+```python
+response = model.invoke("Tell me about black holes")
+print(response)  
+# Output: content='Black holes are...' , response_metadata={'token_usage': {...}} etc.
+```
+
+To get just the text: `response.content` – annoying when chaining steps.
+
+---
+
+### 2. StringOutputParser
+
+**Purpose:** Extract plain string content from LLM response. Most useful inside **Chains**.
+
+**Without parser (manual):**
+```python
+result1 = model.invoke("Write a detailed report on black holes")
+text1 = result1.content
+result2 = model.invoke(f"Summarize this: {text1}")
+print(result2.content)
+```
+
+**With StringOutputParser inside a Chain:**
+```python
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import PromptTemplate
+from langchain_openai import ChatOpenAI
+
+model = ChatOpenAI()
+parser = StrOutputParser()
+
+template1 = PromptTemplate(input_variables=["topic"], template="Write a detailed report on {topic}")
+template2 = PromptTemplate(input_variables=["text"], template="Summarize in 5 lines: {text}")
+
+chain = template1 | model | parser | template2 | model | parser
+result = chain.invoke({"topic": "black holes"})
+print(result)  # Directly prints the final summary string
+```
+
+> **When to use:** When you only need plain text output, especially in multi-step chains.
+
+---
+
+### 3. JsonOutputParser
+
+**Purpose:** Force LLM to return JSON. But **no schema enforcement** – LLM decides the JSON structure.
+
+**Example:**
+```python
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import PromptTemplate
+
+parser = JsonOutputParser()
+
+template = PromptTemplate(
+    template="Give me name, age, and city of a fictional person.\n{format_instructions}\n",
+    input_variables=[],
+    partial_variables={"format_instructions": parser.get_format_instructions()}
+)
+
+chain = template | model | parser
+result = chain.invoke({})
+print(result)  # {'name': 'John', 'age': 30, 'city': 'New York'}
+```
+
+**Problem:** If you ask for 5 facts, the LLM might return `{"facts": [...]}` instead of `{"fact1": "...", "fact2": "..."}`. No control.
+
+> **When to use:** Quick JSON extraction when exact schema doesn't matter.
+
+---
+
+### 4. StructuredOutputParser
+
+**Purpose:** Enforce a **specific JSON schema** – field names and types are fixed.
+
+**Example – forcing a fact1, fact2, fact3 structure:**
+```python
+from langchain.output_parsers import StructuredOutputParser, ResponseSchema
+from langchain_core.prompts import PromptTemplate
+
+response_schemas = [
+    ResponseSchema(name="fact1", description="First fact about the topic"),
+    ResponseSchema(name="fact2", description="Second fact about the topic"),
+    ResponseSchema(name="fact3", description="Third fact about the topic"),
+]
+parser = StructuredOutputParser.from_response_schemas(response_schemas)
+
+template = PromptTemplate(
+    template="Give 3 facts about {topic}.\n{format_instructions}\n",
+    input_variables=["topic"],
+    partial_variables={"format_instructions": parser.get_format_instructions()}
+)
+
+chain = template | model | parser
+result = chain.invoke({"topic": "black holes"})
+print(result)  # {'fact1': '...', 'fact2': '...', 'fact3': '...'}
+```
+
+**Limitation:** No data validation. If the LLM returns `fact2: 42` (number instead of string), it won't raise an error.
+
+> **When to use:** When you need a fixed field structure but don't need type/range validation.
+
+---
+
+### 5. PydanticOutputParser (Most Powerful)
+
+**Purpose:** Enforce schema + **full data validation** (types, constraints, default values, custom validators).
+
+**Example – Person with age constraint (must be > 18):**
+```python
+from langchain.output_parsers import PydanticOutputParser
+from langchain_core.prompts import PromptTemplate
+from pydantic import BaseModel, Field
+from langchain_openai import ChatOpenAI
+
+class Person(BaseModel):
+    name: str = Field(description="Name of the person")
+    age: int = Field(ge=18, description="Age of the person (must be > 18)")
+    city: str = Field(description="City where person lives")
+
+parser = PydanticOutputParser(pydantic_object=Person)
+
+template = PromptTemplate(
+    template="Generate name, age, and city of a {nationality} person.\n{format_instructions}\n",
+    input_variables=["nationality"],
+    partial_variables={"format_instructions": parser.get_format_instructions()}
+)
+
+model = ChatOpenAI()
+chain = template | model | parser
+result = chain.invoke({"nationality": "Indian"})
+print(result.name)   # Access as Pydantic object attribute
+print(result.age)    # Will be int; if LLM returns "25 years", Pydantic coerces to 25
+```
+
+**If LLM returns age = 15, Pydantic raises validation error – you can catch and handle it.**
+
+> **When to use:** Most Python projects. You get schema enforcement + validation + type coercion.
+
+---
+
+## 🔁 Summary Table – Four Output Parsers
+
+| Parser | Schema Enforcement | Data Validation | Best for |
+|--------|-------------------|-----------------|----------|
+| **StringOutputParser** | ❌ (just string) | ❌ | Plain text, multi-step chains |
+| **JsonOutputParser** | ❌ (freeform JSON) | ❌ | Quick JSON, structure not critical |
+| **StructuredOutputParser** | ✅ (field names fixed) | ❌ | Fixed schema, no validation needed |
+| **PydanticOutputParser** | ✅ (fields + types) | ✅ (constraints, defaults, coercion) | **Most Python projects (recommended)** |
+
+---
+
+## 🔁 Using Parsers in Chains – General Pattern
+
+All parsers follow the same pattern:
+
+```python
+from langchain_core.prompts import PromptTemplate
+from langchain_openai import ChatOpenAI
+
+model = ChatOpenAI()
+parser = SomeOutputParser()  # e.g., PydanticOutputParser(pydantic_object=MyModel)
+
+template = PromptTemplate(
+    template="Your prompt here...\n{format_instructions}\n",
+    input_variables=["your_variable"],
+    partial_variables={"format_instructions": parser.get_format_instructions()}
+)
+
+chain = template | model | parser
+result = chain.invoke({"your_variable": "some value"})
+```
+
+> The `|` operator chains components together. `get_format_instructions()` injects parsing instructions into the prompt.
+
+---
+
+## 🗓️ Next Steps
+
+- Next video will likely cover **Chains** in depth (already used here, but more details coming)
+- You can explore other parsers: `CommaSeparatedListOutputParser`, `DatetimeOutputParser`, `EnumOutputParser`, etc.
+
+> **Final takeaway:** Use **PydanticOutputParser** for most projects – it gives you the best of both worlds: structured output + validation. Only fallback to simpler parsers if you need something very basic or are working with non-Python systems.
 
 ### Different Output Parsers
 - StrOutput Parser
 - JSON Output Parser
 - Structured Output Parser
 - Pydantic Output Parser
+
+---
+
+## 09. Chains in LangChain (54:00)
+
+summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
