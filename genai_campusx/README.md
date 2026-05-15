@@ -1986,3 +1986,9 @@ structured_model = model.with_structured_output(Review, method="json_mode")
 ## 08. Output Parsers in LangChain (53:12)
 
 summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
+
+### Different Output Parsers
+- StrOutput Parser
+- JSON Output Parser
+- Structured Output Parser
+- Pydantic Output Parser
