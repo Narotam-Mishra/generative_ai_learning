@@ -2210,3 +2210,5 @@ result = chain.invoke({"your_variable": "some value"})
 ## 09. Chains in LangChain (54:00)
 
 summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
+
+Imp Command - `pip install -r ../02_langchain_prompts/requirements.txt`
