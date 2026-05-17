@@ -2209,6 +2209,257 @@ result = chain.invoke({"your_variable": "some value"})
 
 ## 09. Chains in LangChain (54:00)
 
+## 🧑‍🏫 What This Video Covers
+
+This lecture explains **Chains** – the most important component in LangChain (the library is named after it). Chains let you build **pipelines** where the output of one step automatically becomes the input of the next. He covers:
+- Why chains are needed (avoid manual step-by-step coding)
+- **Simple Chain** – one prompt → one LLM → one parser
+- **Sequential Chain** – multiple steps in sequence (e.g., detailed report → summary)
+- **Parallel Chain** – run multiple chains simultaneously and combine results
+- **Conditional Chain** – choose which chain to execute based on a condition (if/else)
+
+---
+
+## ✅ Important Pointers (Key Takeaways)
+
+1. **Chain** = a pipeline that connects multiple components (prompts, models, parsers) so data flows automatically.
+2. **Without chains:** You manually call `prompt.format()`, then `model.invoke()`, then extract `response.content` – very tedious for multi-step apps.
+3. **With chains (LCEL – LangChain Expression Language):** Use the **pipe operator `|`** to connect components: `prompt | model | parser`
+4. **StringOutputParser** is commonly used at the end of a chain to extract plain text from LLM responses.
+5. **Sequential chains** run steps one after another. Use multiple `|` operators.
+6. **Parallel chains** run independent tasks simultaneously using `RunnableParallel`. Great for when you need multiple outputs from the same input (e.g., notes + quiz from a document).
+7. **Conditional chains** use `RunnableBranch` – like an if-else statement for chains. Based on a condition (e.g., sentiment = positive or negative), execute different chains.
+8. **RunnableLambda** converts a simple Python function into a runnable (usable in a chain).
+9. You can **visualize** any chain with `chain.get_graph().print_ascii()`.
+
+---
+
+## 📚 Important Concepts Explained (with Code Examples)
+
+### 1. Simple Chain (One LLM Call)
+
+**Goal:** User gives a topic → LLM generates 5 interesting facts → output as string.
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
+model = ChatOpenAI()
+parser = StrOutputParser()
+
+prompt = PromptTemplate(
+    input_variables=["topic"],
+    template="Generate 5 interesting facts about {topic}."
+)
+
+# Build chain using pipe operator
+chain = prompt | model | parser
+
+# Run
+result = chain.invoke({"topic": "cricket"})
+print(result)
+
+# Visualize
+print(chain.get_graph().print_ascii())
+```
+
+**Why useful:** No need to manually call `prompt.format()`, then `model.invoke()`, then extract `.content`. All automatic.
+
+---
+
+### 2. Sequential Chain (Multiple Steps in Sequence)
+
+**Goal:** First generate a detailed report on a topic, then summarize that report into 5 key points.
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
+model = ChatOpenAI()
+parser = StrOutputParser()
+
+# Step 1: Generate detailed report
+prompt1 = PromptTemplate(
+    input_variables=["topic"],
+    template="Generate a detailed report on {topic}."
+)
+
+# Step 2: Summarize the report
+prompt2 = PromptTemplate(
+    input_variables=["text"],
+    template="Summarize the following text into 5 key points:\n{text}"
+)
+
+# Chain: prompt1 → model → parser → prompt2 → model → parser
+chain = prompt1 | model | parser | prompt2 | model | parser
+
+result = chain.invoke({"topic": "unemployment in India"})
+print(result)
+```
+
+**What happens automatically:** The output of step 1 (detailed report) is fed as input `{text}` into step 2.
+
+---
+
+### 3. Parallel Chain (Running Multiple Tasks Simultaneously)
+
+**Goal:** Given a technical document (e.g., about Linear Regression), generate **notes** and a **quiz** in parallel, then combine them.
+
+**Architecture:**
+- Input text goes to two separate chains (one for notes, one for quiz)
+- Both run in parallel (using `RunnableParallel`)
+- Their outputs are combined by a third chain
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain.schema.runnable import RunnableParallel
+
+model1 = ChatOpenAI()        # for notes
+model2 = ChatAnthropic(model="claude-3")  # for quiz
+model3 = ChatOpenAI()        # for merging
+parser = StrOutputParser()
+
+# Prompt for notes
+prompt_notes = PromptTemplate(
+    input_variables=["text"],
+    template="Generate simple notes from the following text:\n{text}"
+)
+
+# Prompt for quiz
+prompt_quiz = PromptTemplate(
+    input_variables=["text"],
+    template="Generate 5 short Q&A from the following text:\n{text}"
+)
+
+# Prompt for merging
+prompt_merge = PromptTemplate(
+    input_variables=["notes", "quiz"],
+    template="Merge the following notes and quiz into one document:\nNotes:\n{notes}\n\nQuiz:\n{quiz}"
+)
+
+# Define the two parallel chains
+chain_notes = prompt_notes | model1 | parser
+chain_quiz = prompt_quiz | model2 | parser
+
+# Run them in parallel
+parallel = RunnableParallel(notes=chain_notes, quiz=chain_quiz)
+
+# Merge chain
+merge_chain = prompt_merge | model3 | parser
+
+# Final chain: parallel then merge
+final_chain = parallel | merge_chain
+
+result = final_chain.invoke({"text": "Your long document text here..."})
+print(result)
+```
+
+> **Note:** `RunnableParallel` takes a dictionary. It runs each value (chain) with the same input and outputs a dict with same keys.
+
+---
+
+### 4. Conditional Chain (If/Else Based on Condition)
+
+**Goal:** Classify customer feedback as positive or negative, then generate an appropriate response.
+
+**How it works:**
+1. First chain classifies sentiment (returns "positive" or "negative" using a Pydantic parser for consistency)
+2. Then `RunnableBranch` checks the sentiment:
+   - If "positive" → run a chain that thanks the customer
+   - If "negative" → run a chain that apologizes
+   - Else → run a default chain
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser, PydanticOutputParser
+from langchain.schema.runnable import RunnableBranch, RunnableLambda
+from pydantic import BaseModel, Field
+from typing import Literal
+
+model = ChatOpenAI()
+parser = StrOutputParser()
+
+# Define schema for consistent sentiment output
+class Feedback(BaseModel):
+    sentiment: Literal["positive", "negative"] = Field(description="Sentiment of feedback")
+
+pydantic_parser = PydanticOutputParser(pydantic_object=Feedback)
+
+# Step 1: Classify sentiment
+prompt_classify = PromptTemplate(
+    input_variables=["feedback"],
+    template="Classify the sentiment of the following feedback as positive or negative.\n{format_instructions}\nFeedback: {feedback}",
+    partial_variables={"format_instructions": pydantic_parser.get_format_instructions()}
+)
+classify_chain = prompt_classify | model | pydantic_parser
+
+# Step 2: Branch based on sentiment
+# Define positive response chain
+prompt_positive = PromptTemplate(
+    input_variables=["feedback"],
+    template="Write a thank you reply for this positive feedback: {feedback}"
+)
+positive_chain = prompt_positive | model | parser
+
+# Define negative response chain
+prompt_negative = PromptTemplate(
+    input_variables=["feedback"],
+    template="Write an apology reply for this negative feedback: {feedback}"
+)
+negative_chain = prompt_negative | model | parser
+
+# Default chain (if sentiment not recognized)
+def default_func(x):
+    return "Could not determine sentiment."
+
+default_chain = RunnableLambda(default_func)
+
+# Build the branch
+branch = RunnableBranch(
+    (lambda x: x.sentiment == "positive", positive_chain),
+    (lambda x: x.sentiment == "negative", negative_chain),
+    default_chain
+)
+
+# Final chain: classify → branch
+final_chain = classify_chain | branch
+
+# Test with negative feedback
+result = final_chain.invoke({"feedback": "This is a terrible smartphone."})
+print(result)  # Apology message
+
+# Test with positive feedback
+result = final_chain.invoke({"feedback": "This is a wonderful smartphone!"})
+print(result)  # Thank you message
+```
+
+> **Important:** The condition function receives the output of the previous step (the `Feedback` object). We use `RunnableLambda` to wrap a simple function into a runnable for the default branch.
+
+---
+
+## 🔁 Summary Table – Types of Chains
+
+| Chain Type | When to use | Key component | Data flow |
+|------------|-------------|---------------|------------|
+| **Simple** | One LLM call | `prompt \| model \| parser` | Single path |
+| **Sequential** | Multiple steps in order | `step1 \| step2 \| step3` | Output of step N → input of step N+1 |
+| **Parallel** | Independent tasks from same input | `RunnableParallel(dict of chains)` | Same input to all → outputs combined as dict |
+| **Conditional** | Choose path based on condition | `RunnableBranch(conditions + chains)` | Only one branch executes |
+
+---
+
+> **Final takeaway:** Chains are the backbone of any LLM application in LangChain. Use `|` to build pipelines, `RunnableParallel` for parallel processing, and `RunnableBranch` for conditional logic. Always end with a parser like `StrOutputParser` to get clean text.
+
+---
+
+## 10. What are Runnables in LangChain (01:16:21)
+
 summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
 
 Imp Command - `pip install -r ../02_langchain_prompts/requirements.txt`

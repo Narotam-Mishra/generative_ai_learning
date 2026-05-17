@@ -20,7 +20,7 @@ model = ChatOpenAI()
 # step 3 - create output parser
 parser = StrOutputParser()
 
-# step 4 - form chain using baove steps
+# step 4 - form chain 
 chain = prompt_template | model | parser
 
 # tigger the chain
@@ -29,5 +29,5 @@ res = chain.invoke({'topic': 'Cricket'})
 print(f"Output: {res}")
 
 # visualize chain
-# chain.get_graph().print_ascii()
+chain.get_graph().print_ascii()
 
