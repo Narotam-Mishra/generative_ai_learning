@@ -2460,6 +2460,468 @@ print(result)  # Thank you message
 
 ## 10. What are Runnables in LangChain (01:16:21)
 
+## 🧑‍🏫 What This Video Covers
+
+This lecture explains the **Runnable** interface – the foundation of LangChain that makes Chains work. He covers:
+- Why Runnables exist (the problems LangChain faced)
+- What Runnables are (unit of work with common interface)
+- The four key properties of Runnables
+- How Runnables enable flexible chain building (like Lego blocks)
+- Building custom Runnables from scratch (code demo)
+- How LangChain's actual code implements Runnables
+
+---
+
+## ✅ Important Pointers (Key Takeaways)
+
+1. **The problem LangChain solved first:** Standardized interface to different LLM providers (OpenAI, Anthropic, Google).
+2. **The next problem:** LLM apps need many components (loaders, splitters, embeddings, vector stores, retrievers, parsers). Each component had its own methods (`predict`, `format`, `get_relevant_documents`, `parse`) – not compatible.
+3. **LangChain's solution:** Create many **pre-built Chains** (LLMChain, RetrievalQA, etc.) to glue components together.
+4. **The new problem:** Too many chains → bloated codebase, steep learning curve.
+5. **Root cause:** Components were not standardized. Each had different interfaces.
+6. **The fix:** **Runnable interface** – a common standard for ALL components.
+7. **A Runnable is:** a **unit of work** that takes input, processes it, returns output.
+8. **Four properties of Runnables:**
+   - Each does one specific job
+   - All follow the same interface (same methods: `invoke`, `batch`, `stream`)
+   - Runnables can be **composed** (chained together using `|`)
+   - A chain of Runnables is **itself a Runnable**
+9. **Analogy:** Runnables = Lego blocks. Same connectors, can build anything.
+10. **Key methods:** `invoke` (single input → output), `batch` (multiple inputs), `stream` (stream output).
+
+---
+
+## 📚 Important Concepts Explained (with Basic Code Examples)
+
+### 1. The Problem – Incompatible Components
+
+Different LangChain components had different methods:
+
+| Component | Method to call |
+|-----------|----------------|
+| LLM | `predict(prompt)` |
+| PromptTemplate | `format(**kwargs)` |
+| Retriever | `get_relevant_documents(query)` |
+| OutputParser | `parse(text)` |
+
+You couldn't simply chain them. LangChain had to write custom chain classes for every combination.
+
+---
+
+### 2. What is a Runnable?
+
+> **Definition:** A Runnable is a unit of work with a common interface. It takes an input, processes it, and returns an output.
+
+**Basic example (conceptual):**
+```python
+class MyRunnable:
+    def invoke(self, input_data):
+        # process input
+        return output
+```
+
+**Four key properties (Lego block analogy):**
+
+| Property | Meaning | Lego analogy |
+|----------|---------|--------------|
+| **Unit of work** | Each Runnable does one specific job | Each Lego block has a shape/function |
+| **Common interface** | All Runnables have same methods (`invoke`, `batch`, `stream`) | All Lego blocks have same connector studs |
+| **Composable** | You can connect Runnables with `\|` | You can connect Lego blocks |
+| **Result is also Runnable** | A chain of Runnables is itself a Runnable | A built structure is itself a Lego block (can connect to others) |
+
+---
+
+### 3. Building a Custom Runnable (Simplified)
+
+Here's how you'd implement a Runnable interface from scratch:
+
+**Step 1 – Define an abstract Runnable class:**
+```python
+from abc import ABC, abstractmethod
+
+class Runnable(ABC):
+    @abstractmethod
+    def invoke(self, input_data):
+        """Process single input and return output"""
+        pass
+    
+    def batch(self, inputs_list):
+        """Process multiple inputs (default implementation)"""
+        return [self.invoke(inp) for inp in inputs_list]
+    
+    def stream(self, input_data):
+        """Stream output (simplified)"""
+        yield self.invoke(input_data)
+```
+
+**Step 2 – Create a component that implements Runnable (e.g., dummy LLM):**
+```python
+import random
+
+class DummyLLM(Runnable):
+    def __init__(self):
+        self.responses = [
+            "Delhi is the capital of India",
+            "IPL is a cricket league",
+            "AI stands for Artificial Intelligence"
+        ]
+    
+    def invoke(self, prompt):
+        # In real LLM, this would call an API
+        return random.choice(self.responses)
+```
+
+**Step 3 – Create a PromptTemplate as Runnable:**
+```python
+class DummyPromptTemplate(Runnable):
+    def __init__(self, template, input_variables):
+        self.template = template
+        self.input_variables = input_variables
+    
+    def invoke(self, inputs):
+        # Format the template with inputs (like f-string)
+        result = self.template
+        for key, value in inputs.items():
+            result = result.replace(f"{{{key}}}", str(value))
+        return result
+```
+
+**Step 4 – Create a RunnableConnector to chain Runnables:**
+```python
+class RunnableConnector(Runnable):
+    def __init__(self, *runnables):
+        self.runnables = runnables
+    
+    def invoke(self, input_data):
+        current_input = input_data
+        for runnable in self.runnables:
+            current_input = runnable.invoke(current_input)
+        return current_input
+```
+
+**Step 5 – Use the connector to build a chain:**
+```python
+# Create components
+prompt = DummyPromptTemplate(
+    template="Write a short poem about {topic}",
+    input_variables=["topic"]
+)
+llm = DummyLLM()
+
+# Create chain
+chain = RunnableConnector(prompt, llm)
+
+# Run
+result = chain.invoke({"topic": "cricket"})
+print(result)  # Random response from dummy LLM
+```
+
+---
+
+### 4. The Pipe Operator (`|`) as Syntactic Sugar
+
+LangChain allows you to use `|` instead of manual connector:
+
+```python
+# Instead of this:
+chain = RunnableConnector(prompt, llm, parser)
+
+# You can write:
+chain = prompt | llm | parser
+```
+
+The `|` operator does the same thing – passes output of left to input of right.
+
+---
+
+### 5. Real LangChain Runnable Hierarchy
+
+In actual LangChain code:
+
+```
+Runnable (abstract base class)
+    ↑
+RunnableSerializable
+    ↑
+BaseLanguageModel
+    ↑
+BaseChatModel
+    ↑
+ChatOpenAI
+```
+
+Every model (ChatOpenAI, ChatAnthropic, etc.) implements the `invoke` method.
+
+---
+
+### 6. Using Runnables in Practice (Simple Example)
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
+# Each of these is a Runnable
+model = ChatOpenAI()
+prompt = PromptTemplate.from_template("Tell me a joke about {topic}")
+parser = StrOutputParser()
+
+# Chain them (works because all are Runnables)
+chain = prompt | model | parser
+
+# Invoke the chain (which is itself a Runnable)
+result = chain.invoke({"topic": "cats"})
+print(result)
+```
+
+---
+
+## 🔁 Summary – Why Runnables Matter
+
+| Before Runnables | After Runnables |
+|------------------|-----------------|
+| Components had different methods (`predict`, `format`, `parse`) | All components have `invoke` |
+| Each new use case needed a custom Chain class | Use `\|` to compose any components |
+| Codebase bloated with many chain classes | Minimal, flexible, Lego-like building |
+| Steep learning curve | Uniform interface, easy to learn |
+
+---
+
+## 🧠 Key Takeaway
+
+> **Runnables are the secret sauce that makes LangChain chains work.** By giving every component the same interface (`invoke`), LangChain allows you to connect them like Lego blocks – and the resulting chain is itself a Runnable, so you can build arbitrarily complex pipelines without writing custom glue code.
+
+---
+
+### Additional Notes
+
+- [chains](https://reference.langchain.com/python/langchain-classic/chains)
+
+### Runnable - A unit of work that can be invoked, batched, streamed, transformed and composed
+
+### Working of **Retrieval QA chain** using LangChain Expression Language, or LCEL.
+
+```python
+qa_chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+```
+
+Think of it as a pipeline:
+
+```text
+user question
+   ↓
+retrieve relevant docs + keep original question
+   ↓
+fill prompt template
+   ↓
+send to LLM
+   ↓
+convert model response to plain string
+```
+
+Step by step:
+
+**1. User input enters the chain**
+
+Later in your file, you call:
+
+```python
+answer = qa_chain.invoke(query)
+```
+
+where:
+
+```python
+query = "What are the key takeaways from the document?"
+```
+
+So the input to `qa_chain` is just a string question.
+
+---
+
+**2. This dictionary creates the prompt inputs**
+
+```python
+{"context": retriever | format_docs, "question": RunnablePassthrough()}
+```
+
+Your prompt needs two variables:
+
+```python
+{context}
+{question}
+```
+
+So this dictionary creates those two values.
+
+It means:
+
+```text
+context  = run the question through retriever, then format the retrieved docs
+question = pass the original question as-is
+```
+
+---
+
+**3. `"context": retriever | format_docs`**
+
+This part is itself a mini-chain:
+
+```python
+retriever | format_docs
+```
+
+The `retriever` receives the user question and searches the FAISS vector database for relevant document chunks.
+
+For example:
+
+```python
+retriever.invoke("What are the key takeaways from the document?")
+```
+
+returns a list of `Document` objects.
+
+Then `format_docs` runs:
+
+```python
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+```
+
+So it converts retrieved documents into one big text string.
+
+Example result:
+
+```text
+Chunk 1 text...
+
+Chunk 2 text...
+
+Chunk 3 text...
+```
+
+That final string becomes the value of `{context}`.
+
+---
+
+**4. `"question": RunnablePassthrough()`**
+
+This keeps the original input unchanged.
+
+If the user asks:
+
+```python
+"What are the key takeaways from the document?"
+```
+
+then:
+
+```python
+RunnablePassthrough()
+```
+
+passes that same string forward as the value of `{question}`.
+
+So after the dictionary runs, LangChain has something like:
+
+```python
+{
+    "context": "Relevant document chunk 1...\n\nRelevant document chunk 2...",
+    "question": "What are the key takeaways from the document?"
+}
+```
+
+---
+
+**5. `| prompt`**
+
+Now this dictionary is sent into your prompt template:
+
+```python
+prompt = ChatPromptTemplate.from_template("""
+Answer the question based only on the following context:
+{context}
+
+Question: {question}
+""")
+```
+
+LangChain fills in `{context}` and `{question}`.
+
+So the LLM receives a prompt like:
+
+```text
+Answer the question based only on the following context:
+Relevant document chunk 1...
+
+Relevant document chunk 2...
+
+Question: What are the key takeaways from the document?
+```
+
+---
+
+**6. `| llm`**
+
+This sends the completed prompt to the chat model:
+
+```python
+llm = ChatOpenAI(
+    model="gpt-3.5-turbo",
+    temperature=0.7
+)
+```
+
+The model reads the retrieved context and generates an answer.
+
+---
+
+**7. `| StrOutputParser()`**
+
+Chat models usually return a structured message object, not just plain text.
+
+`StrOutputParser()` extracts the text content from the model response.
+
+So instead of getting a LangChain message object, you get a normal Python string:
+
+```python
+"The key takeaways from the document are..."
+```
+
+---
+
+In short, this line:
+
+```python
+qa_chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+```
+
+means:
+
+> Take the user’s question, retrieve relevant document chunks for context, keep the original question, insert both into the prompt, send the prompt to the LLM, and return the answer as a plain string.
+
+The most important part is this:
+
+```python
+{"context": retriever | format_docs, "question": RunnablePassthrough()}
+```
+
+because it prepares the two inputs your prompt needs: retrieved `context` and original `question`.
+
+---
+
+## 11. Langchain Runnables - Part 2 (54:25)
+
 summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
 
 Imp Command - `pip install -r ../02_langchain_prompts/requirements.txt`
