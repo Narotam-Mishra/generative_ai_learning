@@ -18,8 +18,6 @@
 - Is it creating new jobs?
 - Is it accessible?
 
-Summary of the **Generative AI tutorial** , with all important pointers and basic examples for each concept.
-
 ---
 
 ## ✅ Important Pointers (Key Takeaways)
@@ -35,7 +33,6 @@ Summary of the **Generative AI tutorial** , with all important pointers and basi
 7. **Builder side** = harder, needs ML/DL knowledge.
 8. **User side** = easier, needs basic software dev skills.
 9. **Best to learn both sides** to become an AI Engineer.
-10. Course will be **free on YouTube**, not paid (because he hasn’t mastered GenAI 100% yet).
 
 ---
 
