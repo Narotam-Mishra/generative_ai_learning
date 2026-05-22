@@ -2919,6 +2919,272 @@ because it prepares the two inputs your prompt needs: retrieved `context` and or
 
 ## 11. Langchain Runnables - Part 2 (54:25)
 
+## 🧑‍🏫 What This Video Covers
+
+This lecture continues the **Runnables** topic, focusing on **Runnable Primitives** – special runnables that help you combine task‑specific runnables (like PromptTemplate, ChatOpenAI, StrOutputParser) to build flexible workflows. He covers:
+- **RunnableSequence** – chain runnables in order (sequential)
+- **RunnableParallel** – run multiple runnables in parallel with same input
+- **RunnablePassthrough** – pass input through unchanged (like a bypass)
+- **RunnableLambda** – turn any Python function into a runnable
+- **RunnableBranch** – conditional logic (if/else) for runnables
+- **LCEL (LangChain Expression Language)** – the `|` pipe operator for cleaner sequential chains
+
+---
+
+## ✅ Important Pointers (Key Takeaways)
+
+1. **Task‑specific runnables** = LangChain components (PromptTemplate, ChatOpenAI, Retriever, etc.) converted to runnables. They do one specific job.
+2. **Runnable primitives** = tools to combine task‑specific runnables into workflows (sequential, parallel, conditional, etc.)
+3. **RunnableSequence** = connects runnables in a sequence. Output of one becomes input of next.
+4. **RunnableParallel** = runs multiple runnables on the same input, returns a dict of outputs.
+5. **RunnablePassthrough** = returns the input unchanged. Useful when you need to pass data forward without processing.
+6. **RunnableLambda** = wraps any Python function as a runnable, allowing custom logic inside chains.
+7. **RunnableBranch** = like an if‑else statement – chooses which runnable to execute based on a condition.
+8. **LCEL (pipe operator `|`)** = syntactic sugar for `RunnableSequence`. Most common way to build sequential chains.
+9. You can mix primitives: a `RunnableParallel` can contain `RunnableSequence`s inside it.
+10. Future LangChain versions may add declarative syntax for parallel and conditional chains as well.
+
+---
+
+## 📚 Important Concepts Explained (with Code Examples)
+
+### 1. RunnableSequence (Sequential Chain)
+
+**Purpose:** Chain multiple runnables one after another. Output of first → input of second, etc.
+
+**Without LCEL (explicit):**
+```python
+from langchain.schema.runnable import RunnableSequence
+
+chain = RunnableSequence(first_runnable, second_runnable, third_runnable)
+result = chain.invoke(input_data)
+```
+
+**With LCEL (recommended):**
+```python
+chain = first_runnable | second_runnable | third_runnable
+result = chain.invoke(input_data)
+```
+
+**Complete example – generate a joke and then explain it:**
+```python
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain.schema.runnable import RunnableSequence
+
+model = ChatOpenAI()
+parser = StrOutputParser()
+
+prompt1 = PromptTemplate.from_template("Tell a joke about {topic}")
+prompt2 = PromptTemplate.from_template("Explain this joke: {text}")
+
+# Sequential chain
+chain = prompt1 | model | parser | prompt2 | model | parser
+result = chain.invoke({"topic": "AI"})
+print(result)
+```
+
+---
+
+### 2. RunnableParallel (Parallel Execution)
+
+**Purpose:** Run multiple runnables independently on the **same input**, return results as a dictionary.
+
+**Use case:** Generate a tweet **and** a LinkedIn post from the same topic.
+
+```python
+from langchain.schema.runnable import RunnableParallel, RunnableSequence
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
+model = ChatOpenAI()
+parser = StrOutputParser()
+
+prompt_tweet = PromptTemplate.from_template("Write a tweet about {topic}")
+prompt_linkedin = PromptTemplate.from_template("Write a LinkedIn post about {topic}")
+
+# Each is a sequential chain
+tweet_chain = prompt_tweet | model | parser
+linkedin_chain = prompt_linkedin | model | parser
+
+# Run them in parallel
+parallel = RunnableParallel(
+    tweet=tweet_chain,
+    linkedin=linkedin_chain
+)
+
+result = parallel.invoke({"topic": "artificial intelligence"})
+print(result["tweet"])
+print(result["linkedin"])
+```
+
+> **Important:** Both chains receive the same input `{"topic": "..."}`. Output is a dict with keys `"tweet"` and `"linkedin"`.
+
+---
+
+### 3. RunnablePassthrough (Bypass)
+
+**Purpose:** Returns the input unchanged. Useful when you want to keep the original data flowing while also doing other processing.
+
+**Example – generate a joke and also count its words:**
+
+```python
+from langchain.schema.runnable import RunnablePassthrough, RunnableParallel, RunnableLambda
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
+model = ChatOpenAI()
+parser = StrOutputParser()
+
+prompt = PromptTemplate.from_template("Tell a joke about {topic}")
+joke_chain = prompt | model | parser
+
+# Word counter function
+def word_count(text):
+    return len(text.split())
+
+word_counter = RunnableLambda(word_count)  # convert function to runnable
+
+# Parallel: one branch passes joke through, other branch counts words
+parallel = RunnableParallel(
+    joke=RunnablePassthrough(),      # just pass the joke unchanged
+    word_count=word_counter          # count words
+)
+
+# Final chain: generate joke → parallel processing
+final_chain = joke_chain | parallel
+result = final_chain.invoke({"topic": "cats"})
+print(f"Joke: {result['joke']}")
+print(f"Word count: {result['word_count']}")
+```
+
+> Without `RunnablePassthrough`, the word counter would receive the joke, but the original joke wouldn't be available in the output.
+
+---
+
+### 4. RunnableLambda (Custom Function as Runnable)
+
+**Purpose:** Convert any Python function into a runnable so you can use it inside chains.
+
+**Example – clean text before sending to LLM:**
+
+```python
+from langchain.schema.runnable import RunnableLambda
+import re
+
+def clean_text(text):
+    # Remove HTML tags, extra spaces, special characters
+    text = re.sub(r'<.*?>', '', text)
+    text = re.sub(r'[^\w\s]', '', text)
+    return text.lower().strip()
+
+cleaner = RunnableLambda(clean_text)
+
+# Now you can use it in a chain
+chain = cleaner | model | parser
+result = chain.invoke(dirty_text)
+```
+
+**Shorter syntax using lambda directly:**
+```python
+word_counter = RunnableLambda(lambda x: len(x.split()))
+```
+
+---
+
+### 5. RunnableBranch (Conditional Chains)
+
+**Purpose:** Like an if‑else statement for runnables. Choose which runnable to execute based on a condition.
+
+**Example – summarize only if report is longer than 500 words, otherwise return as‑is:**
+
+```python
+from langchain.schema.runnable import RunnableBranch, RunnablePassthrough, RunnableLambda
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
+model = ChatOpenAI()
+parser = StrOutputParser()
+
+# Report generation
+prompt_report = PromptTemplate.from_template("Write a detailed report on {topic}")
+report_chain = prompt_report | model | parser
+
+# Summarizer (for long reports)
+prompt_summary = PromptTemplate.from_template("Summarize this text: {text}")
+summarize_chain = prompt_summary | model | parser
+
+# Condition: check word count
+def is_long(text):
+    return len(text.split()) > 500
+
+# RunnableBranch: (condition, runnable_if_true), (default_runnable)
+branch = RunnableBranch(
+    (RunnableLambda(is_long), summarize_chain),   # if long → summarize
+    RunnablePassthrough()                         # else → pass through
+)
+
+final_chain = report_chain | branch
+result = final_chain.invoke({"topic": "climate change"})
+print(result)
+```
+
+> **Syntax:** `RunnableBranch( (condition, runnable_for_true), default_runnable )`. Condition can be any runnable that returns a boolean (e.g., `RunnableLambda`).
+
+---
+
+### 6. LCEL (LangChain Expression Language)
+
+**Definition:** A declarative way to build sequential chains using the `|` pipe operator. It is syntactic sugar for `RunnableSequence`.
+
+**Instead of:**
+```python
+from langchain.schema.runnable import RunnableSequence
+chain = RunnableSequence(prompt, model, parser)
+```
+
+**You write:**
+```python
+chain = prompt | model | parser
+```
+
+> The pipe operator works because each component (`prompt`, `model`, `parser`) is a **Runnable** that implements the `__or__` method.
+
+**You can also combine primitives with `|`:**
+```python
+# RunnableParallel inside a sequence
+chain = prompt | model | parser | RunnableParallel(
+    original=RunnablePassthrough(),
+    word_count=RunnableLambda(lambda x: len(x.split()))
+)
+```
+
+---
+
+## 🔁 Summary Table – Runnable Primitives
+
+| Primitive | Purpose | When to use |
+|-----------|---------|--------------|
+| `RunnableSequence` (or `\|`) | Sequential execution | Most common – chain steps one after another |
+| `RunnableParallel` | Parallel execution | Same input → multiple independent outputs |
+| `RunnablePassthrough` | Pass input unchanged | Keep original data while doing extra processing |
+| `RunnableLambda` | Custom Python function | Add preprocessing, validation, counting, etc. |
+| `RunnableBranch` | Conditional logic | If/else based on intermediate result |
+
+---
+
+## 📌 Final Takeaway
+
+> **Runnable primitives are the Lego blocks for building LLM workflows in LangChain.** Learn them well – `|` for sequences, `RunnableParallel` for parallel tasks, `RunnableLambda` for custom logic, and `RunnableBranch` for decisions. Almost all complex chains are combinations of these five primitives.
+
+---
+
+## 12. Document Loaders in LangChain (56:43)
+
 summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
 
 Imp Command - `pip install -r ../02_langchain_prompts/requirements.txt`
