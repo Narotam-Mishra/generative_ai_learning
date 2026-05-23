@@ -3187,4 +3187,5 @@ chain = prompt | model | parser | RunnableParallel(
 
 summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
 
-Imp Command - `pip install -r ../02_langchain_prompts/requirements.txt`
+Imp Command - `pip install -r ../04_langchain_chains/requirements.txt`
+
