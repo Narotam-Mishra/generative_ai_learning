@@ -3185,6 +3185,246 @@ chain = prompt | model | parser | RunnableParallel(
 
 ## 12. Document Loaders in LangChain (56:43)
 
+## 🧑‍🏫 What This Video Covers
+
+This lecture introduces **RAG (Retrieval-Augmented Generation)** and the first component needed to build RAG apps – **Document Loaders** in LangChain. He covers:
+- What RAG is and why it's needed (LLMs don't know your private/current data)
+- The four main components of a RAG system (Document Loaders, Text Splitters, Vector Stores, Retrievers)
+- **Document Loaders** – load data from various sources into a standardized `Document` object
+- Five practical loaders: **TextLoader**, **PyPDFLoader**, **DirectoryLoader**, **WebBaseLoader**, **CSVLoader**
+- **Load vs Lazy Load** – memory and performance considerations
+- How to find other loaders and even build custom ones
+
+---
+
+## ✅ Important Pointers (Key Takeaways)
+
+1. **RAG (Retrieval-Augmented Generation)** = give LLM access to external knowledge (PDFs, websites, databases) so it can answer questions about your private or up‑to‑date data.
+2. **Four main components of RAG:**
+   - Document Loaders – bring data into LangChain
+   - Text Splitters – break documents into chunks
+   - Vector Stores – store embeddings for semantic search
+   - Retrievers – fetch relevant chunks for a query
+3. **Document Loader** = a LangChain component that loads data from any source and converts it into a **standardized `Document` object**.
+4. A `Document` object has two parts:
+   - `page_content` – the actual text
+   - `metadata` – source, page number, author, etc.
+5. Every loader returns a **list of `Document` objects**. For PDFs, each page becomes one `Document`.
+6. **Load method** (`loader.load()`) – eager loading: loads **everything into memory at once**, returns a list. Use for small datasets.
+7. **Lazy load method** (`loader.lazy_load()`) – returns a generator; loads **one document at a time** on demand. Use for large datasets to save memory.
+8. LangChain has **100+ document loaders** for PDFs, web pages, cloud storage (S3, Google Drive), social media, YouTube transcripts, etc.
+9. Most loaders are in `langchain_community.document_loaders`.
+10. You can **create custom document loaders** by inheriting from `BaseLoader` if your data source isn't supported.
+
+---
+
+## 📚 Important Concepts Explained (with Code Examples)
+
+### 1. What is RAG?
+
+**Problem:** LLMs like ChatGPT don't know your private company data or current events (their training data is outdated).  
+**Solution:** RAG – retrieve relevant information from your own knowledge base and feed it to the LLM as context.
+
+**Simple RAG flow:**
+1. User asks a question.
+2. System searches your documents (PDFs, websites, DB) for relevant chunks.
+3. LLM answers based on those chunks + its own knowledge.
+
+---
+
+### 2. Document Loader – Standardized Document Object
+
+Every loader returns a **list of `Document` objects**. Each `Document` has:
+- `page_content` – the extracted text
+- `metadata` – source, page number, etc.
+
+```python
+# Example Document object (conceptual)
+Document(
+    page_content="This is the actual text from the file...",
+    metadata={"source": "cricket.txt", "page": 1}
+)
+```
+
+---
+
+### 3. TextLoader – Load a `.txt` File
+
+```python
+from langchain_community.document_loaders import TextLoader
+
+loader = TextLoader("cricket.txt", encoding="utf-8")
+docs = loader.load()  # returns list of Document objects
+
+print(len(docs))               # 1
+print(docs[0].page_content)    # the poem text
+print(docs[0].metadata)        # {'source': 'cricket.txt'}
+```
+
+> **Use when:** You have plain text files (logs, transcripts, code snippets).
+
+---
+
+### 4. PyPDFLoader – Load a PDF (One Document per Page)
+
+```python
+from langchain_community.document_loaders import PyPDFLoader
+
+loader = PyPDFLoader("deep_learning_curriculum.pdf")
+docs = loader.load()
+
+print(len(docs))               # number of pages (e.g., 23)
+print(docs[0].page_content)    # text of first page
+print(docs[0].metadata)        # includes page number, source, etc.
+```
+
+> **Note:** PyPDFLoader works well for text‑based PDFs. For scanned PDFs or complex layouts, use other loaders like `UnstructuredPDFLoader`, `PDFPlumberLoader`, etc.
+
+---
+
+### 5. DirectoryLoader – Load All PDFs in a Folder
+
+```python
+from langchain_community.document_loaders import DirectoryLoader, PyPDFLoader
+
+loader = DirectoryLoader(
+    path="books/",                    # folder path
+    glob="*.pdf",                     # pattern: all PDFs
+    loader_cls=PyPDFLoader           # loader to use for each file
+)
+
+docs = loader.load()
+print(len(docs))  # total pages across all PDFs
+```
+
+**Other glob patterns:**
+- `"*.txt"` – all text files
+- `"**/*.pdf"` – PDFs in all subfolders
+- `"data/*.csv"` – CSV files in data folder
+
+---
+
+### 6. Load vs Lazy Load – Memory Management
+
+| Method | Behavior | Returns | When to use |
+|--------|----------|---------|--------------|
+| `loader.load()` | Eager – loads all documents at once | List of Documents | Small datasets |
+| `loader.lazy_load()` | Lazy – loads one by one on demand | Generator of Documents | Large datasets (saves memory) |
+
+**Example – lazy loading:**
+```python
+loader = DirectoryLoader("books/", glob="*.pdf", loader_cls=PyPDFLoader)
+
+# Lazy load – returns a generator
+for doc in loader.lazy_load():
+    print(doc.metadata)   # processes one page at a time, memory efficient
+```
+
+> When you have hundreds of large PDFs, **always prefer `lazy_load()`** to avoid running out of RAM.
+
+---
+
+### 7. WebBaseLoader – Load Text from a Web Page
+
+```python
+from langchain_community.document_loaders import WebBaseLoader
+
+loader = WebBaseLoader("https://www.flipkart.com/macbook-air-m2/product")
+docs = loader.load()   # single Document for the whole page
+
+print(docs[0].page_content)  # extracted text (HTML tags removed)
+```
+
+> **Limitation:** Works best with static web pages (blogs, news articles). For JavaScript‑heavy pages, use `SeleniumURLLoader`.
+
+**You can load multiple URLs at once:**
+```python
+loader = WebBaseLoader(["url1", "url2", "url3"])
+docs = loader.load()   # returns list of Documents (one per URL)
+```
+
+---
+
+### 8. CSVLoader – Load a CSV File (One Document per Row)
+
+```python
+from langchain_community.document_loaders import CSVLoader
+
+loader = CSVLoader("social_network_ads.csv")
+docs = loader.load()
+
+print(len(docs))              # number of rows (e.g., 400)
+print(docs[0].page_content)   # string like: "User ID: 1001, Gender: Male, Age: 32..."
+print(docs[0].metadata)       # {'source': 'social_network_ads.csv', 'row': 0}
+```
+
+> Each row becomes a separate `Document`. Useful for querying tabular data with LLMs.
+
+---
+
+### 9. Other Useful Document Loaders (Quick Overview)
+
+| Category | Examples |
+|----------|----------|
+| **Web** | `SeleniumURLLoader`, `UnstructuredURLLoader`, `AsyncHtmlLoader` |
+| **Cloud** | `S3FileLoader`, `GoogleDriveLoader`, `AzureBlobStorageLoader` |
+| **Social** | `TwitterTweetLoader`, `RedditPostsLoader` |
+| **Productivity** | `NotionDirectoryLoader`, `SlackLoader`, `GmailLoader` |
+| **Other formats** | `JSONLoader`, `MarkdownLoader`, `UnstructuredWordDocumentLoader` |
+| **Media** | `YoutubeTranscriptLoader` |
+
+> **Full list:** https://python.langchain.com/docs/integrations/document_loaders/
+
+---
+
+### 10. Custom Document Loader (Concept)
+
+If your data source isn't supported, create a custom loader by inheriting from `BaseLoader`:
+
+```python
+from langchain_community.document_loaders import BaseLoader
+from langchain_core.documents import Document
+
+class MyCustomLoader(BaseLoader):
+    def __init__(self, source):
+        self.source = source
+    
+    def lazy_load(self):
+        # Fetch data from your custom source
+        # Yield Document objects one by one
+        yield Document(page_content="...", metadata={"source": self.source})
+    
+    # Or implement .load() using .lazy_load()
+```
+
+> Most community loaders are built this way – you can contribute your own!
+
+---
+
+## 🔁 Summary Table – Loaders Covered
+
+| Loader | Source | Output | Key method |
+|--------|--------|--------|-------------|
+| `TextLoader` | .txt file | 1 Document per file | `.load()` |
+| `PyPDFLoader` | PDF file | 1 Document per page | `.load()` |
+| `DirectoryLoader` | Folder | Multiple Documents (all files) | `.load()` / `.lazy_load()` |
+| `WebBaseLoader` | Web page URL | 1 Document per URL | `.load()` |
+| `CSVLoader` | CSV file | 1 Document per row | `.load()` |
+
+---
+
+## 📌 Final Takeaway
+
+> **Document Loaders are the first step in any RAG pipeline.** They bring external data (PDFs, websites, CSVs, etc.) into LangChain as standardized `Document` objects. Use `lazy_load()` for large datasets to save memory. There are 100+ loaders – learn the basic pattern (import → create loader object → call load/lazy_load) and you can use any of them.
+
+### Imp Links
+
+- [Langchain Document Loaders](https://reference.langchain.com/python/langchain-community/document-loaders)
+
+---
+
+## 13. Text Splitters in LangChain (59:00)
+
 summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
 
 Imp Command - `pip install -r ../04_langchain_chains/requirements.txt`
