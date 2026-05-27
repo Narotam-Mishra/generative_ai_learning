@@ -3425,7 +3425,158 @@ class MyCustomLoader(BaseLoader):
 
 ## 13. Text Splitters in LangChain (59:00)
 
+## 🧑‍🏫 What This Video Covers
+
+This part of lecture explains **why text splitting is essential** for building RAG applications and then dives deep into **length‑based (fixed‑size) splitting** – the simplest but least intelligent technique. He covers:
+- Why splitting is needed (LLM context limits, better embeddings, improved semantic search, better summarization)
+- How length‑based splitting works (chop at fixed character/token count)
+- `CharacterTextSplitter` in LangChain
+- `chunk_overlap` – why and how much to use
+- Combining document loaders with splitters (`split_documents`)
+
+---
+
+## ✅ Important Pointers (Key Takeaways)
+
+1. **Why split text?**
+   - LLMs have **context length limits** (e.g., 50k tokens). A large PDF won't fit.
+   - **Better embeddings** – small chunks capture semantic meaning more accurately than one huge embedding.
+   - **Better semantic search** – small, focused chunks give more relevant search results.
+   - **Better summarization** – LLMs tend to hallucinate or drift on very long texts.
+   - **Computational efficiency** – smaller chunks use less memory and allow parallel processing.
+
+2. **Length‑based splitting** = decide a fixed chunk size (e.g., 100 characters) and cut exactly at that boundary, regardless of words, sentences, or paragraphs.
+
+3. **Pros:** Very simple, fast, easy to implement.  
+   **Cons:** Ignores linguistic structure; can split inside a word, sentence, or paragraph → loses context.
+
+4. **`CharacterTextSplitter`** – LangChain’s class for character‑based splitting.
+
+5. **Key parameters:**
+   - `chunk_size` – max characters per chunk.
+   - `chunk_overlap` – number of characters that overlap between consecutive chunks (helps retain context that would otherwise be lost at the cut).
+   - `separator` – optional delimiter (e.g., space or newline) to try to cut at word boundaries.
+
+6. **Recommended overlap:** 10–20% of chunk size (e.g., for 100‑character chunks, use overlap 10–20).
+
+7. **Use `split_text()`** for raw strings, **`split_documents()`** for Document objects (from loaders).
+
+---
+
+## 📚 Important Concepts Explained (with Code Examples)
+
+### 1. Basic Length‑Based Splitting
+
+```python
+from langchain.text_splitter import CharacterTextSplitter
+
+text = "Machine learning is amazing. It helps computers learn without being explicitly programmed."
+
+splitter = CharacterTextSplitter(
+    chunk_size=50,      # max characters per chunk
+    chunk_overlap=0,     # no overlap
+    separator=""         # split exactly at 50 chars, even inside words
+)
+
+chunks = splitter.split_text(text)
+print(chunks)
+# Example output: ['Machine learning is amazing. It he', 'lps computers learn without be', 'ing explicitly programmed.']
+```
+
+> Notice words like "helps" are cut into "he" and "lps". This is the main drawback.
+
+---
+
+### 2. Using a Separator (e.g., space)
+
+```python
+splitter = CharacterTextSplitter(
+    chunk_size=50,
+    chunk_overlap=0,
+    separator=" "       # try to split at spaces
+)
+chunks = splitter.split_text(text)
+# This will avoid cutting words if possible, but if a word is longer than 50 chars, it will still be split.
+```
+
+---
+
+### 3. Adding Chunk Overlap
+
+**Why?** When you cut at an arbitrary point, you might lose context. Overlap lets the next chunk start a few characters earlier, carrying over the cut part.
+
+```python
+splitter = CharacterTextSplitter(
+    chunk_size=100,
+    chunk_overlap=20,    # last 20 chars of chunk1 appear again at start of chunk2
+    separator=""
+)
+```
+
+**Effect:**  
+- Chunk 1: chars 0‑99  
+- Chunk 2: chars 80‑179 (overlap of 20 chars)  
+- Chunk 3: chars 160‑259, etc.
+
+> Overlap helps preserve context but increases total chunks and computation.
+
+---
+
+### 4. Combining with a Document Loader (PDF)
+
+```python
+from langchain_community.document_loaders import PyPDFLoader
+from langchain.text_splitter import CharacterTextSplitter
+
+# Load PDF → each page becomes a Document
+loader = PyPDFLoader("document.pdf")
+docs = loader.load()   # list of Document objects
+
+# Create splitter
+splitter = CharacterTextSplitter(chunk_size=200, chunk_overlap=20)
+
+# Split the documents
+chunks = splitter.split_documents(docs)
+
+# chunks is a list of Document objects (each with page_content and metadata)
+print(len(chunks))
+print(chunks[0].page_content)  # first chunk text
+print(chunks[0].metadata)      # includes source, page number, etc.
+```
+
+> `split_documents()` automatically applies the splitter to the `page_content` of each Document.
+
+---
+
+### 5. Visualizing Length‑Based Splitting
+
+LangChain documentation provides an interactive tool. For a fixed chunk size (e.g., 100 characters), the text is divided into coloured chunks. Increasing chunk size → fewer chunks. Increasing overlap → chunks share more content.
+
+---
+
+## 🔁 Summary Table – Length‑Based Splitting
+
+| Aspect | Details |
+|--------|---------|
+| **Idea** | Split at exact character/token count |
+| **Speed** | Very fast |
+| **Context awareness** | None – can cut words/sentences |
+| **Best for** | Quick prototyping, rough chunking |
+| **LangChain class** | `CharacterTextSplitter` |
+| **Key params** | `chunk_size`, `chunk_overlap`, `separator` |
+| **Overlap recommendation** | 10‑20% of chunk size |
+
+---
+
+## 📌 Final Takeaway
+
+> **Length‑based splitting is the simplest and fastest method, but it ignores language structure.** Use it for quick tests or when you don't mind losing some context. For production RAG systems, more advanced splitters (recursive, semantic, etc.) are usually better.
+
+- [ChunkViz v0.1](https://chunkviz.up.railway.app/)
+
+---
+
 summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
 
-Imp Command - `pip install -r ../04_langchain_chains/requirements.txt`
+Imp Command - `pip install -r ../05_document_loaders/requirements.txt`
 
