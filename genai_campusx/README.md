@@ -3425,47 +3425,52 @@ class MyCustomLoader(BaseLoader):
 
 ## 13. Text Splitters in LangChain (59:00)
 
-## 🧑‍🏫 What This Video Covers
+## 🧑‍🏫 What This lecture Covers
 
-This part of lecture explains **why text splitting is essential** for building RAG applications and then dives deep into **length‑based (fixed‑size) splitting** – the simplest but least intelligent technique. He covers:
-- Why splitting is needed (LLM context limits, better embeddings, improved semantic search, better summarization)
-- How length‑based splitting works (chop at fixed character/token count)
-- `CharacterTextSplitter` in LangChain
-- `chunk_overlap` – why and how much to use
-- Combining document loaders with splitters (`split_documents`)
+This lecture explains why text splitting is essential for RAG applications and then dives into **four text splitting techniques** in LangChain:
+1. **Length‑based** (fixed character/token count)
+2. **Text‑structure based** (recursive – paragraphs → sentences → words → characters)
+3. **Document‑structure based** (for code, Markdown, HTML)
+4. **Semantic meaning based** (experimental – uses embeddings to detect topic changes)
 
 ---
 
 ## ✅ Important Pointers (Key Takeaways)
 
 1. **Why split text?**
-   - LLMs have **context length limits** (e.g., 50k tokens). A large PDF won't fit.
-   - **Better embeddings** – small chunks capture semantic meaning more accurately than one huge embedding.
-   - **Better semantic search** – small, focused chunks give more relevant search results.
-   - **Better summarization** – LLMs tend to hallucinate or drift on very long texts.
+   - LLMs have **context length limits** (e.g., 50k tokens). Large documents won't fit.
+   - **Better embeddings** – small chunks capture semantic meaning more accurately.
+   - **Better semantic search** – focused chunks give more relevant results.
+   - **Better summarization** – LLMs perform worse on very long texts (drift, hallucination).
    - **Computational efficiency** – smaller chunks use less memory and allow parallel processing.
 
-2. **Length‑based splitting** = decide a fixed chunk size (e.g., 100 characters) and cut exactly at that boundary, regardless of words, sentences, or paragraphs.
+2. **Length‑based splitting** (`CharacterTextSplitter`):
+   - Simplest and fastest. Splits at exact character count.
+   - **Pros:** simple, fast. **Cons:** ignores grammar; can cut words/sentences in half.
 
-3. **Pros:** Very simple, fast, easy to implement.  
-   **Cons:** Ignores linguistic structure; can split inside a word, sentence, or paragraph → loses context.
+3. **Text‑structure based splitting** (`RecursiveCharacterTextSplitter`):
+   - Tries to split on **paragraphs first**, then **sentences**, then **words**, then **characters**.
+   - **Most recommended** – preserves natural language boundaries.
+   - Uses a list of separators: `["\n\n", "\n", " ", ""]`
 
-4. **`CharacterTextSplitter`** – LangChain’s class for character‑based splitting.
+4. **Chunk overlap**:
+   - Number of characters shared between consecutive chunks.
+   - Helps retain context lost at the cut.
+   - Recommended overlap: **10–20% of chunk size** (e.g., 100‑char chunks → 10‑20 overlap).
 
-5. **Key parameters:**
-   - `chunk_size` – max characters per chunk.
-   - `chunk_overlap` – number of characters that overlap between consecutive chunks (helps retain context that would otherwise be lost at the cut).
-   - `separator` – optional delimiter (e.g., space or newline) to try to cut at word boundaries.
+5. **Document‑structure based splitting**:
+   - Extension of recursive splitting for **code** (Python, JS, Java, etc.), **Markdown**, **HTML**.
+   - Uses language‑specific separators (e.g., `class`, `def`, `function` for Python).
 
-6. **Recommended overlap:** 10–20% of chunk size (e.g., for 100‑character chunks, use overlap 10–20).
-
-7. **Use `split_text()`** for raw strings, **`split_documents()`** for Document objects (from loaders).
+6. **Semantic meaning based splitting** (`SemanticChunker` – experimental):
+   - Uses embeddings and similarity to detect where topic changes.
+   - Not yet production‑ready; performance can be inconsistent.
 
 ---
 
 ## 📚 Important Concepts Explained (with Code Examples)
 
-### 1. Basic Length‑Based Splitting
+### 1. Length‑Based Splitting – `CharacterTextSplitter`
 
 ```python
 from langchain.text_splitter import CharacterTextSplitter
@@ -3474,109 +3479,287 @@ text = "Machine learning is amazing. It helps computers learn without being expl
 
 splitter = CharacterTextSplitter(
     chunk_size=50,      # max characters per chunk
-    chunk_overlap=0,     # no overlap
-    separator=""         # split exactly at 50 chars, even inside words
+    chunk_overlap=0,    # no overlap
+    separator=""        # split at exact count
 )
 
 chunks = splitter.split_text(text)
 print(chunks)
-# Example output: ['Machine learning is amazing. It he', 'lps computers learn without be', 'ing explicitly programmed.']
+# Output: ['Machine learning is amazing. It he', 'lps computers learn without be', 'ing explicitly programmed.']
+# Notice words are cut in the middle.
 ```
 
-> Notice words like "helps" are cut into "he" and "lps". This is the main drawback.
-
----
-
-### 2. Using a Separator (e.g., space)
-
+**Add overlap to retain context:**
 ```python
-splitter = CharacterTextSplitter(
-    chunk_size=50,
-    chunk_overlap=0,
-    separator=" "       # try to split at spaces
-)
-chunks = splitter.split_text(text)
-# This will avoid cutting words if possible, but if a word is longer than 50 chars, it will still be split.
+splitter = CharacterTextSplitter(chunk_size=100, chunk_overlap=20, separator="")
+chunks = splitter.split_text(long_text)
 ```
 
 ---
 
-### 3. Adding Chunk Overlap
-
-**Why?** When you cut at an arbitrary point, you might lose context. Overlap lets the next chunk start a few characters earlier, carrying over the cut part.
+### 2. Text‑Structure Based – `RecursiveCharacterTextSplitter` (Recommended)
 
 ```python
-splitter = CharacterTextSplitter(
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+splitter = RecursiveCharacterTextSplitter(
     chunk_size=100,
-    chunk_overlap=20,    # last 20 chars of chunk1 appear again at start of chunk2
-    separator=""
+    chunk_overlap=20,
+    separators=["\n\n", "\n", " ", ""]   # try paragraphs, then lines, then words, then chars
 )
+
+chunks = splitter.split_text(long_text)
+print(len(chunks))
 ```
 
-**Effect:**  
-- Chunk 1: chars 0‑99  
-- Chunk 2: chars 80‑179 (overlap of 20 chars)  
-- Chunk 3: chars 160‑259, etc.
+**Why better?** It tries to split at paragraph breaks first, so you don't cut sentences in the middle unless absolutely necessary.
 
-> Overlap helps preserve context but increases total chunks and computation.
-
----
-
-### 4. Combining with a Document Loader (PDF)
-
+**Combine with document loader:**
 ```python
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import CharacterTextSplitter
 
-# Load PDF → each page becomes a Document
 loader = PyPDFLoader("document.pdf")
-docs = loader.load()   # list of Document objects
+docs = loader.load()
 
-# Create splitter
-splitter = CharacterTextSplitter(chunk_size=200, chunk_overlap=20)
-
-# Split the documents
-chunks = splitter.split_documents(docs)
-
-# chunks is a list of Document objects (each with page_content and metadata)
-print(len(chunks))
-print(chunks[0].page_content)  # first chunk text
-print(chunks[0].metadata)      # includes source, page number, etc.
+splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+chunks = splitter.split_documents(docs)   # list of Document objects
 ```
 
-> `split_documents()` automatically applies the splitter to the `page_content` of each Document.
+---
+
+### 3. Document‑Structure Based – For Code and Markdown
+
+**For Python code – use language‑specific splitter:**
+```python
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.text_splitter import Language
+
+python_code = """
+class MyClass:
+    def __init__(self):
+        pass
+    def my_method(self):
+        return True
+"""
+
+splitter = RecursiveCharacterTextSplitter.from_language(
+    language=Language.PYTHON,
+    chunk_size=200,
+    chunk_overlap=20
+)
+
+chunks = splitter.split_text(python_code)
+print(len(chunks))   # Each class/method may become its own chunk
+```
+
+**Supported languages:** `PYTHON`, `JAVASCRIPT`, `JAVA`, `RUST`, `MARKDOWN`, `HTML`, `CPP`, `GO`, etc.
+
+**For Markdown:**
+```python
+splitter = RecursiveCharacterTextSplitter.from_language(
+    language=Language.MARKDOWN,
+    chunk_size=200,
+    chunk_overlap=20
+)
+chunks = splitter.split_text(markdown_text)
+```
 
 ---
 
-### 5. Visualizing Length‑Based Splitting
+### 4. Semantic Meaning Based – `SemanticChunker` (Experimental)
 
-LangChain documentation provides an interactive tool. For a fixed chunk size (e.g., 100 characters), the text is divided into coloured chunks. Increasing chunk size → fewer chunks. Increasing overlap → chunks share more content.
+```python
+from langchain_experimental.text_splitter import SemanticChunker
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings()
+
+# Use standard deviation as threshold
+splitter = SemanticChunker(
+    embeddings=embeddings,
+    breakpoint_threshold_type="standard_deviation",
+    breakpoint_threshold_amount=1.0   # 1 standard deviation
+)
+
+text = "Agriculture is important for farmers. The IPL is a cricket league. Terrorism is a global issue."
+chunks = splitter.split_text(text)
+print(len(chunks))   # Ideally 3 chunks, but may be inconsistent
+```
+
+**Other threshold types:** `"percentile"`, `"interquartile"`, `"gradient"`.
+
+> **Note:** This is experimental – results may not be perfect. Use with caution.
 
 ---
 
-## 🔁 Summary Table – Length‑Based Splitting
+## 🔁 Summary Table – Four Text Splitting Techniques
 
-| Aspect | Details |
-|--------|---------|
-| **Idea** | Split at exact character/token count |
-| **Speed** | Very fast |
-| **Context awareness** | None – can cut words/sentences |
-| **Best for** | Quick prototyping, rough chunking |
-| **LangChain class** | `CharacterTextSplitter` |
-| **Key params** | `chunk_size`, `chunk_overlap`, `separator` |
-| **Overlap recommendation** | 10‑20% of chunk size |
+| Technique | LangChain Class | Best for | Pros | Cons |
+|-----------|----------------|----------|------|------|
+| **Length‑based** | `CharacterTextSplitter` | Quick prototyping | Very fast, simple | Cuts words/sentences, loses context |
+| **Text‑structure (recursive)** | `RecursiveCharacterTextSplitter` | General RAG (most recommended) | Respects paragraphs/sentences | Slightly slower |
+| **Document‑structure** | `RecursiveCharacterTextSplitter.from_language()` | Code, Markdown, HTML | Preserves code structure | Requires language specification |
+| **Semantic** | `SemanticChunker` (experimental) | Topic‑based splitting | Understands meaning | Inconsistent, experimental |
 
 ---
 
 ## 📌 Final Takeaway
 
-> **Length‑based splitting is the simplest and fastest method, but it ignores language structure.** Use it for quick tests or when you don't mind losing some context. For production RAG systems, more advanced splitters (recursive, semantic, etc.) are usually better.
+> **Use `RecursiveCharacterTextSplitter` for most RAG applications.** It balances speed and linguistic structure. Add `chunk_overlap` (10‑20% of `chunk_size`) to retain context. Only use `CharacterTextSplitter` for very simple tasks, and semantic splitting only for experimentation.
 
 - [ChunkViz v0.1](https://chunkviz.up.railway.app/)
 
+## How `RecursiveCharacterTextSplitter` Works ? 
+
+The `RecursiveCharacterTextSplitter` is the most recommended text splitter in LangChain for RAG applications. It tries to split text **naturally** – at paragraph boundaries, then sentence boundaries, then word boundaries – before falling back to character‑level splitting. This preserves meaning and avoids cutting words or sentences in half.
+
 ---
+
+### 🧠 Core Idea
+
+Instead of cutting at a fixed character count no matter what (like `CharacterTextSplitter`), it **recursively** tries a list of **separators** (e.g., `"\n\n"`, `"\n"`, `" "`, `""`). For each separator, it attempts to split the text into chunks that fit within the `chunk_size`. If a chunk is still too large, it moves to the next separator in the list and splits that chunk further.
+
+After splitting, it also **merges** small neighbouring chunks to get as close to `chunk_size` as possible (without exceeding it). This yields chunks that are both size‑controlled and semantically coherent.
+
+---
+
+### ⚙️ Step‑by‑Step Algorithm
+
+Let’s use a concrete example:
+
+**Text:**
+```
+First paragraph. It has two sentences. Here is the second sentence.
+Second paragraph. This is another sentence.
+```
+
+**Settings:**
+- `chunk_size = 25` characters (small for illustration)
+- `chunk_overlap = 0` (for simplicity)
+- `separators = ["\n\n", "\n", ".", " ", ""]`
+
+#### Step 1 – Try the first separator `"\n\n"`
+The text contains **one** `"\n\n"` (between the two paragraphs). Splitting on it gives:
+- Chunk A: `"First paragraph. It has two sentences. Here is the second sentence."` (length ≈ 65 characters → too big)
+- Chunk B: `"Second paragraph. This is another sentence."` (length ≈ 45 characters → too big)
+
+Both exceed `chunk_size = 25`. So we move to the **next separator**.
+
+#### Step 2 – Try separator `"\n"`
+There is no `"\n"` inside either chunk (the original `\n\n` has been consumed). No split occurs.
+
+#### Step 3 – Try separator `"."` (sentence boundary)
+Split Chunk A on periods (`.`). Keep the period at the end of each sentence.
+
+Chunk A becomes:
+- `"First paragraph. "` (length 18) – fits
+- `"It has two sentences. "` (length 23) – fits
+- `"Here is the second sentence."` (length 27) – still too big
+
+Chunk B becomes:
+- `"Second paragraph. "` (length 18) – fits
+- `"This is another sentence."` (length 24) – fits
+
+Now we have sentences. But `"Here is the second sentence."` is still 27 characters > 25. So we go deeper.
+
+#### Step 4 – Try separator `" "` (word boundary)
+Take the oversized sentence `"Here is the second sentence."` and split on spaces:
+- `"Here"` (4)
+- `"is"` (2)
+- `"the"` (3)
+- `"second"` (6)
+- `"sentence."` (9)
+
+Now we have very small chunks (words). None exceed `chunk_size`. The splitter then **merges** neighbouring words to create larger chunks without exceeding `chunk_size`.
+
+For example, merge `"Here"` + `"is"` + `"the"` → `"Here is the"` (11 chars). Add `"second"` → `"Here is the second"` (17 chars). Add `"sentence."` would make 26 > 25, so stop. New chunk: `"Here is the second"`. Remaining `"sentence."` becomes its own chunk.
+
+#### Step 5 – Final chunks (without overlap)
+After merging, you get something like:
+1. `"First paragraph. "`
+2. `"It has two sentences. "`
+3. `"Here is the second"`
+4. `"sentence."`
+5. `"Second paragraph. "`
+6. `"This is another sentence."`
+
+> Notice no chunk exceeds 25 characters, and most are **full sentences** or **fragments of a sentence** – still much better than cutting inside a word.
+
+---
+
+### 🔁 What if `chunk_overlap > 0`?
+
+If `chunk_overlap = 10`, the splitter will make sure that the last 10 characters of chunk N become the first 10 characters of chunk N+1. This helps retain context that would otherwise be lost at the cut.
+
+Example (simplified):
+- Chunk 1: characters 0‑100
+- Chunk 2: characters 90‑190 (overlap of last 10 chars of chunk 1)
+
+---
+
+### 💻 Basic Code Example
+
+```python
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+# Sample text
+text = """First paragraph. It has two sentences. Here is the second sentence.
+Second paragraph. This is another sentence."""
+
+# Create splitter
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=25,
+    chunk_overlap=0,
+    separators=["\n\n", "\n", ".", " ", ""]
+)
+
+# Split
+chunks = splitter.split_text(text)
+
+# Print results
+for i, chunk in enumerate(chunks):
+    print(f"Chunk {i}: {chunk}")
+```
+
+**Output (will be similar to the steps above):**
+```
+Chunk 0: First paragraph.
+Chunk 1: It has two sentences.
+Chunk 2: Here is the second
+Chunk 3: sentence.
+Chunk 4: Second paragraph.
+Chunk 5: This is another sentence.
+```
+
+---
+
+### ✅ Why It’s Better Than `CharacterTextSplitter`
+
+| Feature | `CharacterTextSplitter` | `RecursiveCharacterTextSplitter` |
+|---------|------------------------|----------------------------------|
+| Splitting logic | Exact character count | Tries natural boundaries first |
+| Word cutting | Yes, can cut inside a word | Avoids unless forced |
+| Sentence integrity | No | Tries to keep sentences whole |
+| Custom separators | Only one | List of separators (recursive) |
+| Output quality | Poor for semantic search | Much better |
+
+---
+
+### 🧠 Key Takeaways
+
+- **RecursiveCharacterTextSplitter** is the go‑to splitter for RAG.
+- It works by **trying separators in order** (paragraph → sentence → word → character).
+- If a chunk is too large, it goes **one level deeper** (recursively) for that chunk.
+- After splitting, it **merges** small adjacent chunks to optimize size.
+- Use `chunk_overlap` (10‑20% of chunk size) to prevent context loss at boundaries.
+
+> **Rule of thumb:** Start with `chunk_size = 500` and `chunk_overlap = 50`, adjust based on your document type and embedding model requirements.
+
+---
+
+## 14. Vector Stores in LangChain (50:30)
 
 summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
 
-Imp Command - `pip install -r ../05_document_loaders/requirements.txt`
+Imp Command - `pip install -r ../06_text_splitters/requirements.txt`
 
