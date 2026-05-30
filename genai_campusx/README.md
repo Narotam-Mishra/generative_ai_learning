@@ -3991,6 +3991,20 @@ print("Remaining IDs:", final_data['ids'])
 
 ## 15. Retrievers in LangChain (51:09)
 
+### Types of Retrievers 
+1. Data Source Retrievers
+2. Search Strategies Retrievers
+
+#### Data Source Retrievers
+- Wikipedia Retriever
+- Vector Store Retriever
+- Archive Retrievers
+
+#### Search Strategies Retrievers (different search strategies used in Retrievers) :-
+- Maximum Marginal Relevance (MMR)
+- Multi Query Retriever 
+- Contextual Compression Retriever 
+
 summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
 
 Imp Command - `pip install -r ../07_vector_stores/requirements.txt`
