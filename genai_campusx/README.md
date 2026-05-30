@@ -3991,6 +3991,198 @@ print("Remaining IDs:", final_data['ids'])
 
 ## 15. Retrievers in LangChain (51:09)
 
+## 🧑‍🏫 What This lecture Covers
+
+This lecture explains **Retrievers** – the component that fetches relevant documents from a data source in response to a user query. He covers:
+- What retrievers are and why they are essential in RAG
+- Types of retrievers based on **data source** (Wikipedia, Vector Store)
+- Types based on **retrieval strategy** (MMR, Multi-Query, Contextual Compression)
+- How to implement them in LangChain with code examples
+
+---
+
+## ✅ Important Pointers (Key Takeaways)
+
+1. **Retriever** = a component that takes a user query and returns a list of relevant LangChain `Document` objects from a data source (vector store, API, database, etc.).
+2. **Retrievers are Runnables** – they have an `invoke()` method, so you can use them inside chains.
+3. **Two ways to categorize retrievers:**
+   - By **data source** (Wikipedia, Vector Store, Arxiv, etc.)
+   - By **retrieval strategy** (MMR, Multi‑Query, Contextual Compression, etc.)
+4. **Wikipedia Retriever** – queries Wikipedia API (keyword matching, not semantic). Returns Wikipedia articles as Documents.
+5. **Vector Store Retriever** – the most common. Wraps a vector store (Chroma, FAISS, Pinecone) and performs semantic similarity search.
+6. **MMR (Maximum Marginal Relevance)** – reduces redundancy in results by balancing relevance and diversity. Returns documents that are relevant but also different from each other.
+7. **Multi‑Query Retriever** – uses an LLM to generate multiple alternative queries from the original ambiguous query, fetches results for each, then combines and deduplicates. Improves retrieval for vague questions.
+8. **Contextual Compression Retriever** – after fetching documents, uses an LLM to compress each document, keeping only the parts relevant to the query. Reduces noise and improves answer accuracy.
+9. LangChain has **many other retrievers** (Parent Document, Time‑Weighted, Self‑Query, Ensemble, etc.) – you can explore them in the documentation.
+
+---
+
+## 📚 Important Concepts Explained (with Code Examples)
+
+### 1. What is a Retriever?
+
+**Definition:** A component that takes a user query and returns relevant documents from a data source.
+
+```python
+# A retriever is a Runnable – you can invoke it like a model
+docs = retriever.invoke("What is climate change?")
+# Returns list of Document objects (page_content + metadata)
+```
+
+---
+
+### 2. Wikipedia Retriever (Data Source: Wikipedia API)
+
+```python
+from langchain_community.retrievers import WikipediaRetriever
+
+retriever = WikipediaRetriever(top_k_results=2, lang="en")
+
+query = "The geopolitical history of India and Pakistan from a Chinese perspective"
+docs = retriever.invoke(query)
+
+for doc in docs:
+    print(doc.page_content[:200])   # first 200 chars
+```
+
+> **Note:** Uses **keyword matching**, not semantic search. Good for quick fact‑retrieval from Wikipedia.
+
+---
+
+### 3. Vector Store Retriever (Most Common)
+
+Wrap any vector store (Chroma, FAISS, Pinecone) into a retriever.
+
+```python
+from langchain_community.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings
+from langchain_core.documents import Document
+
+# Create sample documents
+docs = [
+    Document(page_content="LangChain is a framework for building LLM apps.", metadata={"topic": "langchain"}),
+    Document(page_content="Chroma is a vector database.", metadata={"topic": "chroma"}),
+    Document(page_content="Embeddings convert text to vectors.", metadata={"topic": "embeddings"}),
+]
+
+# Create vector store
+embeddings = OpenAIEmbeddings()
+vector_store = FAISS.from_documents(docs, embeddings)
+
+# Create retriever from vector store
+retriever = vector_store.as_retriever(search_kwargs={"k": 2})
+
+# Retrieve
+query = "What is Chroma used for?"
+docs = retriever.invoke(query)
+for doc in docs:
+    print(doc.page_content)
+```
+
+> You can also use `similarity_search` directly on the vector store, but the retriever is a **Runnable** – easier to chain.
+
+---
+
+### 4. MMR Retriever (Maximum Marginal Relevance)
+
+MMR balances **relevance** and **diversity** – avoids returning very similar documents.
+
+```python
+# Create retriever with MMR
+retriever = vector_store.as_retriever(
+    search_type="mmr",
+    search_kwargs={"k": 3, "lambda_mult": 0.5}
+)
+# lambda_mult = 1 → pure similarity (no diversity)
+# lambda_mult = 0 → maximum diversity (less relevance)
+# 0.5 is a good balance
+
+docs = retriever.invoke("What is LangChain?")
+for doc in docs:
+    print(doc.page_content)
+```
+
+> Use when your query could return many redundant documents (e.g., multiple paragraphs saying the same thing).
+
+---
+
+### 5. Multi‑Query Retriever
+
+For ambiguous queries, generate multiple alternative queries using an LLM, retrieve for each, then combine results.
+
+```python
+from langchain.retrievers.multi_query import MultiQueryRetriever
+from langchain_openai import ChatOpenAI
+
+# Base retriever (e.g., similarity search)
+base_retriever = vector_store.as_retriever(search_kwargs={"k": 3})
+
+# Multi‑Query retriever
+llm = ChatOpenAI(model="gpt-3.5-turbo")
+retriever = MultiQueryRetriever.from_llm(
+    retriever=base_retriever,
+    llm=llm
+)
+
+# Query with ambiguity
+docs = retriever.invoke("How to improve energy levels and maintain balance?")
+for doc in docs:
+    print(doc.page_content)
+```
+
+> **How it works:** The LLM generates different phrasings of the query, runs each through the base retriever, merges all results, and removes duplicates.
+
+---
+
+### 6. Contextual Compression Retriever
+
+Retrieves documents using a base retriever, then **compresses** each document (keeping only query‑relevant parts) using an LLM.
+
+```python
+from langchain.retrievers import ContextualCompressionRetriever
+from langchain.retrievers.document_compressors import LLMChainExtractor
+from langchain_openai import ChatOpenAI
+
+# Base retriever (e.g., similarity)
+base_retriever = vector_store.as_retriever(search_kwargs={"k": 3})
+
+# Compressor (LLM that extracts relevant parts)
+llm = ChatOpenAI(model="gpt-3.5-turbo")
+compressor = LLMChainExtractor.from_llm(llm)
+
+# Contextual compression retriever
+retriever = ContextualCompressionRetriever(
+    base_compressor=compressor,
+    base_retriever=base_retriever
+)
+
+# Query
+docs = retriever.invoke("What is photosynthesis?")
+for doc in docs:
+    print(doc.page_content)   # Only the sentence(s) about photosynthesis
+```
+
+> **Use case:** When your documents contain multiple topics or extra information. The compressor removes irrelevant parts, giving the LLM cleaner context.
+
+---
+
+## 🔁 Summary Table – Retrievers Covered
+
+| Retriever | Strategy | Best for |
+|-----------|----------|----------|
+| **WikipediaRetriever** | Keyword matching on Wikipedia | Quick facts from Wikipedia |
+| **VectorStoreRetriever** | Semantic similarity (embeddings) | Most RAG applications |
+| **MMR Retriever** | Relevance + Diversity | Avoiding redundant results |
+| **MultiQueryRetriever** | Generate multiple query variants | Ambiguous / broad queries |
+| **ContextualCompressionRetriever** | Extract only relevant parts from long documents | Noisy or mixed‑content documents |
+
+---
+
+## 📌 Final Takeaway
+
+> **Retrievers are the bridge between your data and the LLM.** Start with a simple `VectorStoreRetriever`. When your RAG system needs improvement, experiment with advanced retrievers like MMR (for diversity), Multi‑Query (for ambiguous queries), or Contextual Compression (for long/noisy documents).
+
+
 ### Types of Retrievers 
 1. Data Source Retrievers
 2. Search Strategies Retrievers
@@ -4005,7 +4197,17 @@ print("Remaining IDs:", final_data['ids'])
 - Multi Query Retriever 
 - Contextual Compression Retriever 
 
+#### Useful Links
+
+- [Retrievers](https://reference.langchain.com/python/langchain-community/retrievers)
+
+- [Retrievers Integration](https://docs.langchain.com/oss/python/integrations/retrievers/)
+
+---
+
+## 16. Retrieval Augmented Generation (59:23)
+
 summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
 
-Imp Command - `pip install -r ../07_vector_stores/requirements.txt`
+Imp Command - `pip install -r ../08_retrievers/requirements.txt`
 
