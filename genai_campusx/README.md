@@ -4207,7 +4207,655 @@ for doc in docs:
 
 ## 16. Retrieval Augmented Generation (59:23)
 
-summaries this genai tutorial transcript in simple words, make note of all important pointers and also explain each important concepts with basic code examples
+## 🧑‍🏫 What This lecture Covers
+
+This lecture explains **RAG** – why it’s needed, how it works step by step, and how it compares to fine‑tuning. He covers:
+- Three major problems with LLMs (private data, recent data, hallucination)
+- Fine‑tuning as a solution – but it has drawbacks (expensive, requires expertise, frequent re‑training)
+- **In‑context learning** – LLMs can learn from examples given in the prompt (few‑shot prompting)
+- **RAG** = retrieve relevant context from an external knowledge base and inject it into the prompt
+- The four stages of a RAG system: **Indexing**, **Retrieval**, **Augmentation**, **Generation**
+- How RAG solves the three problems better than fine‑tuning
+- Next video: build a RAG system with LangChain
+
+---
+
+## ✅ Important Pointers (Key Takeaways)
+
+1. **Three problems of plain LLMs (no external data):**
+   - ❌ **Private data** – LLM wasn’t trained on your company’s internal documents.
+   - ❌ **Recent data** – LLM has a knowledge cutoff date; can’t answer about current events.
+   - ❌ **Hallucination** – LLM may confidently generate false information.
+
+2. **Fine‑tuning** – retrain a pre‑trained LLM on a small, domain‑specific dataset.  
+   - It can solve the three problems, but has major downsides:
+     - 🧠 **Computationally expensive** – needs GPUs, time, money.
+     - 👨‍🔧 **Requires ML expertise** – not for everyone.
+     - 🔁 **Frequent updates** – each new document requires re‑training.
+
+3. **In‑context learning** – LLMs can learn from examples provided *inside the prompt* (few‑shot prompting).  
+   - This is an **emergent property** of large models (GPT‑3 and above).  
+   - No weight updates – just examples in the prompt.
+
+4. **RAG** = give the LLM **relevant context** (retrieved from your own documents) together with the user’s query.  
+   - The LLM answers based on that context, not just its internal knowledge.
+
+5. **Four stages of RAG:**
+   - **Indexing** (offline) – prepare the external knowledge base.
+   - **Retrieval** (real‑time) – find relevant context for the query.
+   - **Augmentation** – combine query + context into a prompt.
+   - **Generation** – LLM produces the final answer.
+
+6. **RAG vs fine‑tuning – RAG wins for dynamic, cost‑sensitive, and non‑expert setups:**
+   - No re‑training needed – just add/remove documents from the vector store.
+   - Cheaper and simpler.
+   - Works with any LLM (no need to modify model weights).
+
+---
+
+## 📚 Detailed Explanation of RAG Stages (with Basic Code Concepts)
+
+### Stage 1: Indexing – Building the External Knowledge Base
+
+> **Goal:** Convert your documents into a searchable vector store.
+
+**Sub‑steps:**
+
+1. **Document Ingestion** – Load documents from any source (PDF, website, database, etc.)  
+   *LangChain provides many document loaders.*
+
+   ```python
+   from langchain_community.document_loaders import PyPDFLoader
+   loader = PyPDFLoader("company_policy.pdf")
+   docs = loader.load()   # list of Document objects
+   ```
+
+2. **Text Chunking** – Split large documents into smaller, semantically meaningful chunks.  
+   *Using `RecursiveCharacterTextSplitter` (recommended).*
+
+   ```python
+   from langchain.text_splitter import RecursiveCharacterTextSplitter
+   splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+   chunks = splitter.split_documents(docs)
+   ```
+
+3. **Embedding** – Convert each chunk into a vector (embedding) that captures its meaning.  
+   *Use an embedding model (OpenAI, HuggingFace, etc.)*
+
+   ```python
+   from langchain_openai import OpenAIEmbeddings
+   embeddings = OpenAIEmbeddings()
+   # Each chunk will be converted to a vector
+   ```
+
+4. **Store in Vector Store** – Save the vectors together with the original text and metadata.  
+   *Options: FAISS (local), Chroma, Pinecone, etc.*
+
+   ```python
+   from langchain_community.vectorstores import FAISS
+   vector_store = FAISS.from_documents(chunks, embeddings)
+   vector_store.save_local("./faiss_index")
+   ```
+
+> After indexing, you have a **searchable external knowledge base**.
+
+---
+
+### Stage 2: Retrieval – Finding Relevant Context for a Query
+
+> **Goal:** Given a user query, fetch the most relevant chunks from the vector store.
+
+**Steps:**
+
+1. **Convert query to vector** using the same embedding model used during indexing.
+2. **Perform similarity search** (e.g., cosine similarity) to find the closest vectors in the store.
+3. **Rank and return** the top‑k chunks (these become the **context**).
+
+```python
+# Load the vector store (if previously saved)
+vector_store = FAISS.load_local("./faiss_index", embeddings)
+
+# Create a retriever
+retriever = vector_store.as_retriever(search_kwargs={"k": 3})
+
+# User query
+query = "What is the leave policy for new employees?"
+context_docs = retriever.invoke(query)   # list of Document objects
+context = "\n".join([doc.page_content for doc in context_docs])
+```
+
+> LangChain provides advanced retrievers (MMR, Multi‑Query, Contextual Compression) for better results.
+
+---
+
+### Stage 3: Augmentation – Building the Prompt with Context
+
+> **Goal:** Combine the user’s query and the retrieved context into a single prompt that instructs the LLM to answer **only from the context**.
+
+**Example prompt template:**
+
+```
+You are a helpful assistant. Answer the question based ONLY on the provided context.
+If the context does not contain the answer, say "I don't know".
+
+Context:
+{context}
+
+Question: {question}
+Answer:
+```
+
+```python
+from langchain_core.prompts import PromptTemplate
+
+template = """
+You are a helpful assistant. Answer the question based ONLY on the provided context.
+If the context does not contain the answer, say "I don't know".
+
+Context:
+{context}
+
+Question: {question}
+Answer:
+"""
+
+prompt = PromptTemplate(template=template, input_variables=["context", "question"])
+```
+
+---
+
+### Stage 4: Generation – Producing the Final Answer
+
+> **Goal:** Send the augmented prompt to an LLM and get the answer.
+
+```python
+from langchain_openai import ChatOpenAI
+
+model = ChatOpenAI(model="gpt-3.5-turbo")
+
+# Create a chain that combines prompt, model, and a simple output parser
+from langchain_core.output_parsers import StrOutputParser
+
+chain = prompt | model | StrOutputParser()
+
+answer = chain.invoke({"context": context, "question": query})
+print(answer)
+```
+
+> The LLM uses both its own parametric knowledge and the provided context, but the prompt forces it to **ground** the answer in the context, reducing hallucination.
+
+---
+
+## 🔁 Complete RAG Pipeline (Conceptual Code)
+
+```python
+# 1. Indexing (one‑time setup)
+loader = PyPDFLoader("doc.pdf")
+docs = loader.load()
+splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+chunks = splitter.split_documents(docs)
+embeddings = OpenAIEmbeddings()
+vector_store = FAISS.from_documents(chunks, embeddings)
+
+# 2. Retrieval (per query)
+retriever = vector_store.as_retriever(k=3)
+query = "What is the refund policy?"
+context_docs = retriever.invoke(query)
+context = "\n".join([d.page_content for d in context_docs])
+
+# 3. Augmentation + 4. Generation
+prompt = PromptTemplate.from_template(
+    "Context: {context}\nQuestion: {question}\nAnswer based only on context:"
+)
+chain = prompt | ChatOpenAI() | StrOutputParser()
+answer = chain.invoke({"context": context, "question": query})
+print(answer)
+```
+
+---
+
+## 🆚 RAG vs Fine‑Tuning – Summary
+
+| Aspect                | Fine‑Tuning                                    | RAG                                             |
+|-----------------------|------------------------------------------------|-------------------------------------------------|
+| **Updates**           | Re‑train the model for each new document       | Just add/remove documents from vector store    |
+| **Cost**              | High (GPUs, time, expertise)                   | Low (embedding + vector search)                |
+| **Knowledge source**  | Becomes part of model weights (parametric)     | External (non‑parametric) – easily inspectable |
+| **Hallucination**     | Can still happen if training data is noisy     | Greatly reduced – forced to use context        |
+| **Freshness**         | Requires re‑training to stay current           | Add latest docs instantly                       |
+| **Explainability**    | Hard – you don’t know which training example was used | Easy – you can show the retrieved context |
+
+---
+
+## 🔍 How RAG Solves the Three Problems
+
+| Problem                | How RAG fixes it                                              |
+|------------------------|---------------------------------------------------------------|
+| **Private data**       | Context comes from your own vector store (your documents).    |
+| **Recent data**        | Add new documents to the vector store – no re‑training.       |
+| **Hallucination**      | Prompt forces LLM to answer *only* from provided context – if context lacks info, LLM says “I don’t know”. |
+
+---
+
+## 📌 Final Takeaway
+
+> **RAG = retrieve relevant context + augment the prompt + generate grounded answers.**  
+> It’s cheaper, simpler, and more flexible than fine‑tuning for most real‑world applications where data changes frequently or you don’t have ML engineering resources.  
+> **Next video:** Build a complete RAG system using LangChain – combining all four components (loaders, splitters, vector stores, retrievers, LLMs).
+
+---
+
+## More Readings
+
+## 🧠 Parametric Knowledge of an LLM – Explained Simply
+
+### What is Parametric Knowledge?
+
+> **Parametric knowledge** is all the information that an LLM (Large Language Model) learns during its **pre‑training** phase and stores inside its **parameters** (weights and biases of the neural network).
+
+When an LLM is trained on massive amounts of text (like the entire internet, books, articles), it doesn’t memorize sentences word‑for‑word. Instead, it learns patterns, facts, relationships, and structures, and encodes them as **numerical values** in its billions of parameters. Those numbers **are** the model’s knowledge.
+
+After training, the model no longer has access to the original training data. It only has the parameters – hence the knowledge is called **parametric**.
+
+---
+
+### Why is Parametric Knowledge Useful (and Powerful)?
+
+1. **Compact storage**  
+   Billions of facts are compressed into a few gigabytes of numbers. No need to keep a huge database.
+
+2. **Fast inference**  
+   Answering a question requires only a forward pass through the network – no searching external databases.
+
+3. **Generalisation**  
+   The model can answer questions about topics it never saw exactly in training, because it has learned underlying patterns.
+
+4. **Zero‑shot and few‑shot ability**  
+   Even without fine‑tuning, a large LLM can perform new tasks just by reading the prompt – because its parametric knowledge provides a rich foundation.
+
+---
+
+### Basic Examples
+
+#### Example 1 – Factual knowledge
+
+**Question:** *“What is the capital of France?”*  
+**LLM’s answer:** *“The capital of France is Paris.”*
+
+- The LLM never saw a line saying “capital of France is Paris” for every possible phrasing.  
+- During pre‑training, it saw the word “Paris” associated with “France” many times, in contexts like “Paris is the capital”, “France’s capital Paris”, etc.  
+- It encoded that relationship into its parameters.  
+- When you ask, it uses those parameters to generate the correct answer.
+
+#### Example 2 – Reasoning without explicit training data
+
+**Question:** *“If a train travels at 60 km/h for 2.5 hours, how far does it go?”*  
+**LLM’s answer:** *“Distance = speed × time = 60 × 2.5 = 150 km.”*
+
+- The LLM was never explicitly trained on that exact math problem.  
+- Its parametric knowledge includes the mathematical relationship `distance = speed × time` and how to multiply.  
+- It applies that knowledge to solve the problem on the fly.
+
+#### Example 3 – Language understanding
+
+**Prompt:** *“Translate ‘Good morning’ to Hindi.”*  
+**LLM’s answer:** *“शुभ प्रभात”*
+
+- The mapping between English and Hindi phrases is not stored as a lookup table.  
+- The model learned patterns of translation from bilingual text during training.  
+- That knowledge is distributed across millions of parameters.
+
+---
+
+### Where Parametric Knowledge Falls Short – Why We Need RAG
+
+Parametric knowledge has limits:
+
+| Limitation | Example |
+|------------|---------|
+| **Private data** | Your company’s internal policies – never seen during training. |
+| **Recent events** | “Who won the latest IPL match?” – training data is outdated. |
+| **Hallucination** | The model may invent plausible but false facts because it “knows” patterns, not truth. |
+
+That’s why **RAG (Retrieval‑Augmented Generation)** adds **non‑parametric knowledge** – external documents – to supplement the model’s parametric memory.
+
+---
+
+### Final Analogy
+
+> **Parametric knowledge** = what you learned in school and still remember without looking up.  
+> **RAG** = looking up an encyclopedia while answering a question – you still use your brain, but you also refer to fresh, specific information.
+
+--- 
+
+## How LLM Parameters Actually Store Knowledge – A Deeper Look
+
+This is a fascinating (and complex) topic. Let’s break it down without heavy math.
+
+---
+
+## 1. What Are Parameters?
+
+In a neural network, **parameters** are the **weights** and **biases** of all the connections between neurons.  
+For an LLM like GPT‑3, there are about **175 billion parameters**.
+
+Think of parameters as **knobs** or **dials** inside a giant machine.  
+Initially, these knobs are set randomly. During training, the machine adjusts them little by little so that given an input (e.g., “The capital of France is”), it turns the knobs to produce the correct output (“Paris”).
+
+After training, the final positions of all knobs **store** everything the model has learned.
+
+---
+
+## 2. Knowledge is Not Stored in One Place – It’s Distributed
+
+Unlike a database where “Paris” is linked to “France” in one row, LLM knowledge is **distributed across millions of parameters**. No single parameter knows “Paris”. Instead, patterns emerge from the **combination** of many parameters.
+
+**Example analogy:**  
+A symphony orchestra playing a melody. No single musician plays the whole tune; the melody exists in the collective interaction. Similarly, the fact “capital of France is Paris” is encoded in the collective activation patterns of thousands of neurons.
+
+---
+
+## 3. How Training Shapes Parameters
+
+### Step 1 – Predict next word (pre‑training objective)
+LLMs are trained to predict the next word given previous words.  
+Example: *“The capital of France is ___”* → the correct next word is “Paris”.
+
+Every time the model predicts correctly, the parameters are slightly adjusted to reinforce that pattern. Over billions of sentences, the parameters learn:
+- Word meanings (semantics)
+- Grammar (syntax)
+- Relationships (e.g., “is capital of”)
+- Common sense and reasoning
+
+### Step 2 – Backpropagation and gradient descent
+The model calculates an error (difference between its prediction and the true next word). Then it uses an algorithm called **backpropagation** to figure out which knobs (parameters) contributed to the error and how much to turn them to reduce the error next time. This is repeated trillions of times.
+
+Over time, the parameters settle into a configuration that produces correct predictions for a vast range of inputs.
+
+---
+
+## 4. Where Is “Paris” Stored? – A Concrete Example
+
+Consider a very simplified 2‑layer network that maps words to concepts.  
+In reality, LLMs have many more layers (e.g., 96 layers in GPT‑3), each with many “attention heads”.
+
+**Word embeddings:** Each word is first converted into a vector (list of numbers). For example, “Paris” might be represented as `[0.2, 0.7, -0.3, …]`. These embeddings are also learned parameters (the “embedding matrix”).
+
+**Attention weights:** When the model reads “The capital of France is”, attention mechanisms assign high weight to the words “capital” and “France” and learn that the next word should be a city that is associated with “capital” and “France”. The attention weights are parameters that encode *relationships*.
+
+**Feed‑forward weights:** After attention, the information passes through dense layers. These layers combine and transform the information. The ability to retrieve “Paris” as the answer is the result of many such transformations.
+
+So “Paris” is not stored as a string. Instead, there is a **path** through the network that, when triggered by the context “capital of France”, leads to the vector for “Paris” being generated.
+
+---
+
+## 5. Emergent Properties – Why Large Models Work Better
+
+When the model has only a few parameters (e.g., 10 million), it can’t capture fine‑grained relationships; it may store only simple word co‑occurrence statistics.
+
+With billions of parameters, the model can learn:
+- **Multi‑hop reasoning** (e.g., “A is taller than B, B is taller than C → A is taller than C”)
+- **Abstract concepts** (e.g., “justice”, “humour”)
+- **Few‑shot learning** – the model can infer a new task from just a few examples in the prompt, because its parameters have learned the *meta‑pattern* of learning from examples.
+
+These **emergent abilities** appear only at large scale. That’s why bigger models (more parameters) are generally more capable.
+
+---
+
+## 6. Limitations – Why Parameters Aren’t Perfect
+
+- **Static knowledge** – Once training is finished, the parameters don’t change. New events (e.g., “2025 election results”) are not known.
+- **Hallucination** – Because knowledge is distributed, the model can sometimes combine patterns in plausible‑sounding but incorrect ways. It doesn’t “know” that it doesn’t know.
+- **No source attribution** – You can’t ask the model “which training document said that?”.
+
+That’s why **RAG (Retrieval‑Augmented Generation)** combines parametric knowledge (the model) with non‑parametric knowledge (external documents). The model still uses its parameters for language understanding, reasoning, and generation, but it also refers to retrieved text to ensure accuracy and freshness.
+
+---
+
+## 7. Simple Code Intuition (Not Real LLM Code)
+
+Imagine a tiny “parametric knowledge” as a Python dictionary, but in reality it’s billions of numbers:
+
+```python
+# This is a metaphor – real parameters are not explicit key‑value pairs.
+parametric_knowledge = {
+    "capital_of_France": "Paris",
+    "speed×time": "distance",
+    # ... billions of such patterns encoded in numbers
+}
+```
+
+The LLM’s parameters are like a **very high‑dimensional, fuzzy, overlapping dictionary**. When you ask a question, the model runs a computation that essentially “looks up” the answer by activating the relevant combination of parameters.
+
+---
+
+## Final Takeaway
+
+> **LLM parameters store knowledge as numerical patterns that, when activated together, produce correct words and reasoning.**  
+> This compression is incredibly powerful – it allows generalisation, reasoning, and language fluency – but it is static and can produce errors.  
+> That’s why we augment parametric knowledge with external, non‑parametric data in systems like RAG.
+
+---
+
+## Everything about **Fine Tuning**
+
+### 🎯 What is Fine-Tuning & Why Do It?
+
+Fine-tuning is the process of taking a pre-trained Large Language Model (LLM) and continuing its training on a smaller, task-specific dataset. Think of the pre-trained model as a well-educated generalist who has read much of the internet. Fine-tuning makes that generalist a specialist in your domain—whether that's answering medical questions, handling legal documents, or writing code in your company’s style.
+
+This process modifies the model's internal parameters, allowing it to learn new patterns and adapt to your specific task.
+
+#### **Key Advantages**
+
+*   **Domain Specialization**: Adapts general-purpose models to excel in a particular field.
+*   **Performance Gains**: Models learn industry-specific terminology and problem-solving patterns, leading to higher accuracy on focused tasks.
+*   **Cost & Privacy**: It's dramatically cheaper than training a model from scratch and can be performed on your own infrastructure, keeping data private.
+*   **Model Compression & Speed**: Combined with quantization, fine-tuned models can be compressed to a fraction of their size, enabling faster inference on everyday hardware.
+
+#### **💡 When to Fine-Tune (and When Not To)**
+
+Before committing to fine-tuning, consider simpler, less resource-intensive options.
+
+*   **Use Prompt Engineering for simple tasks**: Well-crafted prompts can often steer a general LLM effectively without any training.
+*   **Use RAG when you need up-to-date or specific information**: RAG lets the model look up external information, making it ideal for private documents or content that changes frequently. It also allows you to cite sources.
+*   **Fine-Tune when you need to permanently change the model’s behavior**: This is best for:
+    *   Mastering a consistent **style or tone** (e.g., a brand voice).
+    *   Learning complex, domain-specific **rules and formats**.
+    *   Reliably **following specific instructions** for a task like summarization.
+    *   Developing complex **reasoning abilities** that are hard to capture with a prompt or RAG.
+
+### 🛠️ The Main Approaches to Fine-Tuning
+
+Fine-tuning methods are broadly divided into full parameter updates and efficient techniques that train only a fraction of the parameters.
+
+#### **Full Fine-Tuning**
+
+This traditional method updates **all** the model's weights during training, providing the highest degree of customization.
+
+*   **Advantages**: Maximum adaptability to new domains, often yielding the best theoretical performance for complex tasks.
+*   **Disadvantages**: Very demanding—training a 7B model can require over 100GB of VRAM and is extremely expensive. It’s also prone to **catastrophic forgetting**, where the model loses its general knowledge while specializing.
+
+#### **⛓️ PEFT: The Efficient Revolution**
+
+**PEFT** techniques have made fine-tuning accessible by drastically reducing memory and time requirements. They work by freezing the original model and training only a tiny number of additional parameters. This approach can slash memory use by **10 to 20 times** while preserving **90-95% of the performance** of full fine-tuning.
+
+Let’s look at the key PEFT methods:
+
+**LoRA (Low-Rank Adaptation)**
+* **Core Idea**: Adds small "adapter" matrices alongside frozen model weights.
+* **Key Characteristics**: Very efficient; adapters can be merged into the base weights for **zero inference latency**.
+* **Resource Needs & Performance**:
+  * Memory: ~28GB (for a 7B model)
+  * Performance: **90-95% of full fine-tuning**
+* **Best For**: General fine-tuning on limited but capable hardware (e.g., 24GB GPU).
+
+**QLoRA (Quantized LoRA)**
+* **Core Idea**: Takes LoRA further by quantizing the base model to 4-bit precision.
+* **Key Characteristics**: The most memory-efficient technique, enabling fine-tuning of large models on consumer GPUs.
+* **Resource Needs & Performance**:
+  * Memory: Enables 33B+ models on a 24GB GPU
+  * Performance: **80-90% of full fine-tuning**
+* **Best For**: Resource-constrained environments where you need to fine-tune very large models.
+
+**Other PEFT Variants**
+
+*   **Prefix Tuning**: Trains small, continuous "virtual tokens" that are prepended to the input. It uses very few parameters (usually <1%).
+*   **Adapter Tuning**: Inserts small adapter modules between the layers of a frozen Transformer model.
+*   **BitFit**: An ultra-lightweight method that only fine-tunes the bias terms of the model, less than 0.1% of parameters.
+
+### 🧠 Alignment Fine-Tuning: Shaping Model Behavior
+
+While PEFT adapts *knowledge*, alignment techniques adapt the model's *behavior*, teaching it to follow instructions and align with human values.
+
+*   **Supervised Fine-Tuning (SFT)**: Uses a dataset of explicit **input-output pairs** to teach the model how to behave. For instance, training it with examples of how a customer support agent should answer questions.
+*   **Reinforcement Learning from Human Feedback (RLHF)**: This three-stage pipeline creates a highly aligned conversational AI:
+    1.  **Supervised Fine-Tuning (SFT)**: Gives the model a baseline in the desired task.
+    2.  **Reward Modeling**: Humans rank different model outputs to train a "reward model" that learns human preferences.
+    3.  **Reinforcement Learning (RL)**: The model is fine-tuned using the reward model as a guide, learning to generate responses that achieve higher scores.
+*   **Direct Preference Optimization (DPO)**: A simpler and more stable alternative to RLHF. It bypasses the need for a separate reward model by using preference data to directly optimize the policy.
+
+### 💻 Putting It Into Practice: Code Examples
+
+The easiest way to get started with fine-tuning is using the **Hugging Face `transformers`** and **`peft`** libraries.
+
+#### **1. Basic Full Fine-Tuning with Hugging Face Trainer**
+
+This example shows the workflow for full fine-tuning using the `Trainer` API.
+
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer
+
+model_name = "meta-llama/Llama-2-7b-hf"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+# Add padding token if missing
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
+
+model = AutoModelForCausalLM.from_pretrained(model_name)
+
+# Assume you've created a 'dataset' object with your training data
+# ...
+
+training_args = TrainingArguments(
+    output_dir="./llama_finetuned",
+    per_device_train_batch_size=2,
+    num_train_epochs=3,
+    learning_rate=3e-5,
+    fp16=True,                     # Enable mixed precision
+)
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=dataset,         # Your Hugging Face Dataset object
+)
+
+trainer.train()
+model.save_pretrained("./llama_finetuned")
+```
+
+#### **2. Efficient LoRA Fine-Tuning with PEFT**
+
+Here's how to use LoRA to achieve similar results with far fewer resources.
+
+```python
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from datasets import load_dataset
+
+model_name = "meta-llama/Llama-2-7b-hf"
+
+# --- 1. Load and optionally quantize model (for QLoRA) ---
+# This uses 4-bit quantization to drastically reduce memory.
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_compute_dtype=torch.bfloat16,
+)
+
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    quantization_config=bnb_config,  # Comment this line to run without quantization
+    device_map="auto"
+)
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+tokenizer.pad_token = tokenizer.eos_token
+
+# Prepare the model for k-bit training (for QLoRA)
+model = prepare_model_for_kbit_training(model)
+
+# --- 2. Configure LoRA ---
+lora_config = LoraConfig(
+    r=16,                        # Rank
+    lora_alpha=32,               # Scaling factor
+    target_modules=["q_proj", "v_proj", "k_proj", "o_proj"], # Modules to adapt
+    lora_dropout=0.05,
+    bias="none",
+    task_type="CAUSAL_LM",
+)
+model = get_peft_model(model, lora_config)
+model.print_trainable_parameters() # Should show <1% of parameters trainable
+
+# --- 3. Load a sample dataset and preprocess ---
+# Replace with your own dataset
+dataset = load_dataset("gururise/AlpacaDataCleaned", split="train")
+dataset = dataset.select(range(500)) # Select first 500 samples for demo
+
+def format_prompt(example):
+    """Formats the instruction dataset for causal LM."""
+    text = f"### Instruction:\n{example['instruction']}\n\n### Response:\n{example['output']}"
+    return tokenizer(text, truncation=True, max_length=512, padding="max_length")
+
+tokenized_dataset = dataset.map(format_prompt, remove_columns=dataset.column_names)
+
+# --- 4. Train ---
+training_args = TrainingArguments(
+    output_dir="./lora_llama2",
+    per_device_train_batch_size=4,
+    num_train_epochs=1,
+    learning_rate=2e-4,
+    fp16=True,
+    report_to="none",
+)
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=tokenized_dataset,
+)
+
+trainer.train()
+
+# --- 5. Save the adapter weights ---
+model.save_pretrained("./my_lora_adapter")
+```
+
+### 💎 Summary & Final Recommendations
+
+Fine-tuning is a powerful way to turn a general LLM into an expert on your specific task. The table below summarizes the key trade-offs to help you choose the right approach.
+
+| Method | Trainable Parameters | Hardware Needs (for 7B model) | Performance vs. Full FT | Best For |
+| :--- | :--- | :--- | :--- | :--- |
+| **Full Fine-Tuning** | 100% (7B params) | 100-120GB VRAM | 100% (baseline) | Maximum performance, complex domain shifts, abundant compute |
+| **LoRA** | ~0.1-1% | ~28GB VRAM | 90-95% | General fine-tuning on limited hardware |
+| **QLoRA** | ~0.1-1% | Can run 70B+ models on 24GB | 80-90% | Extreme resource constraints, fine-tuning very large models |
+
+---
+
+### Different ways to fine tune LLM :-
+1. **Supervised Fine Tuning** - provide labelled dataset (prompt with desired output, usually thousand to lakh dataset are provided)
+
+2. **Continued Pretraining** - this is unsupervised fine tuning technique where unlabelled dataset are provided to LLM.
+
+3. **Reinforcement Learning From Human Feedback** (RLHF) - RLHF is a technique used to align Large Language Models (LLMs) with human preferences – teaching the model what kind of responses humans find helpful, honest, and harmless.
+
+---
+
+## 17. YouTube Chatbot using LangChain | Building a RAG system in LangChain (46:14)
+
+summaries this genai tutorial transcript in simple words with all detail, make note of all important pointers and also explain each important concepts with basic code examples
 
 Imp Command - `pip install -r ../08_retrievers/requirements.txt`
 
