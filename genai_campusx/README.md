@@ -4857,5 +4857,4 @@ Fine-tuning is a powerful way to turn a general LLM into an expert on your speci
 
 summaries this genai tutorial transcript in simple words with all detail, make note of all important pointers and also explain each important concepts with basic code examples
 
-Imp Command - `pip install -r ../08_retrievers/requirements.txt`
-
+Imp Command - `pip install -r ../09_youtube_chatbot_using_rag/requirements.txt`
