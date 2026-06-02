@@ -5108,6 +5108,10 @@ The video ends with a long list of possible improvements – these are **not imp
 
 ## 18. Tools in LangChain (45:15)
 
+- [Tools](https://docs.langchain.com/oss/python/langchain/tools)
+
+- [Tool Integrations](https://docs.langchain.com/oss/python/integrations/tools)
+
 summaries this genai tutorial transcript in simple words with all detail, make note of all important pointers and also explain each important concepts with basic code examples
 
 Imp Command - `pip install -r ../09_youtube_chatbot_using_rag/requirements.txt`
