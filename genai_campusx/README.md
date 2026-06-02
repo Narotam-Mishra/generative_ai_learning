@@ -5108,9 +5108,235 @@ The video ends with a long list of possible improvements – these are **not imp
 
 ## 18. Tools in LangChain (45:15)
 
+## 🧑‍🏫 What This lecture Covers
+
+This lecture introduces **Tools** – a core concept for building AI agents. He explains:
+- Why LLMs need tools (they can think and speak but cannot *act*)
+- What a tool is (a Python function packaged so an LLM can understand and call it)
+- Built‑in tools (pre‑made for common tasks like web search, shell commands)
+- Three ways to create **custom tools** (decorator, StructuredTool, BaseTool subclass)
+- **Toolkits** – collections of related tools for reusability
+
+The next video will cover **tool calling** (connecting tools to an LLM) and agents.
+
+---
+
+## ✅ Important Pointers (Key Takeaways)
+
+1. **LLMs have two core abilities:** reasoning (thinking) and language generation (speaking). They **cannot** take actions (e.g., book a ticket, search the web, run code).
+2. **Tools** = Python functions packaged so that an LLM can understand when and how to call them. Tools give LLMs “hands and legs” – the ability to act.
+3. **Built‑in tools** are provided by LangChain for common tasks:  
+   - DuckDuckGo search, Wikipedia query, Python REPL, shell commands, HTTP requests, Gmail, Slack, SQL databases, etc.
+   - Check the [LangChain tools documentation](https://python.langchain.com/docs/integrations/tools/) for the full list.
+4. **Custom tools** are needed when your use case is unique (e.g., calling your own API, encapsulating business logic, interacting with your database).
+5. **Three ways to create custom tools** (all produce the same interface – a Runnable with `invoke`):
+   - **`@tool` decorator** – simplest, recommended for most cases.
+   - **`StructuredTool.from_function`** – more strict, uses Pydantic for input schema validation.
+   - **Subclass `BaseTool`** – most flexible, allows async methods and deep customisation.
+6. Every tool has three important attributes:  
+   - `name` – identifier for the LLM  
+   - `description` – explains what the tool does (used by LLM to decide when to call it)  
+   - `args_schema` (or inferred from function signature) – defines the expected input parameters
+7. **Toolkits** = collections of related tools (e.g., a MathToolkit with add, multiply, divide). They improve reusability and organisation.
+
+---
+
+## 📚 Detailed Concepts with Code Examples
+
+### 1. What is a Tool & Why Needed?
+
+**Analogy:** An LLM is like a human body with a brain (reasoning) and a mouth (speaking) but no hands or legs – it cannot act. Tools are the hands and legs.
+
+**Definition:** A tool is a Python function that is **packaged** so an LLM can understand its purpose, its input parameters, and call it when needed.
+
+**Without tools:** LLM can only answer based on its parametric knowledge.  
+**With tools:** LLM can search the web, run calculations, send emails, interact with APIs, etc.
+
+---
+
+### 2. Using a Built‑in Tool (DuckDuckGo Search)
+
+```python
+from langchain_community.tools import DuckDuckGoSearchRun
+
+search_tool = DuckDuckGoSearchRun()
+result = search_tool.invoke("IPL news today")
+print(result)
+```
+
+> The tool is a Runnable – it has `.invoke()`.
+
+**Check tool metadata:**
+```python
+print(search_tool.name)          # "duckduckgo_search"
+print(search_tool.description)   # "A wrapper around DuckDuckGo Search..."
+print(search_tool.args)          # schema of expected input
+```
+
+---
+
+### 3. Creating a Custom Tool – Method 1: `@tool` Decorator (Simplest)
+
+**Steps:**
+1. Write a normal Python function.
+2. Add type hints (recommended) and a docstring (description).
+3. Decorate with `@tool`.
+
+```python
+from langchain_core.tools import tool
+
+@tool
+def multiply(a: int, b: int) -> int:
+    """Multiply two numbers."""
+    return a * b
+
+# Now multiply is a Tool (a Runnable)
+result = multiply.invoke({"a": 3, "b": 5})
+print(result)   # 15
+
+# Inspect tool attributes
+print(multiply.name)          # "multiply"
+print(multiply.description)   # "Multiply two numbers."
+print(multiply.args)          # schema with a, b as integers
+```
+
+> The docstring becomes the tool’s `description`. Type hints become the `args_schema`.
+
+---
+
+### 4. Method 2: `StructuredTool.from_function` (Stricter)
+
+Use this when you want explicit control over the input schema using a Pydantic model. Good for production.
+
+```python
+from langchain_core.tools import StructuredTool
+from pydantic import BaseModel, Field
+
+# Define input schema with Pydantic
+class MultiplyInput(BaseModel):
+    a: int = Field(description="First number")
+    b: int = Field(description="Second number")
+
+# Define the function (no need for type hints if schema is given)
+def multiply_func(a: int, b: int) -> int:
+    return a * b
+
+# Create tool
+multiply_tool = StructuredTool.from_function(
+    func=multiply_func,
+    name="multiply",
+    description="Multiplies two integers.",
+    args_schema=MultiplyInput
+)
+
+result = multiply_tool.invoke({"a": 3, "b": 5})
+print(result)   # 15
+```
+
+> This method enforces the schema strictly – the LLM must provide valid inputs.
+
+---
+
+### 5. Method 3: Subclassing `BaseTool` (Most Flexible)
+
+Allows you to create async versions, add state, or deeply customise behaviour.
+
+```python
+from langchain_core.tools import BaseTool
+from pydantic import BaseModel, Field
+
+# Input schema (Pydantic)
+class MultiplyInput(BaseModel):
+    a: int = Field(description="First number")
+    b: int = Field(description="Second number")
+
+# Custom tool class
+class MultiplyTool(BaseTool):
+    name: str = "multiply"
+    description: str = "Multiplies two integers."
+    args_schema: type[BaseModel] = MultiplyInput
+
+    def _run(self, a: int, b: int) -> int:
+        # Synchronous execution
+        return a * b
+
+    async def _arun(self, a: int, b: int) -> int:
+        # Asynchronous version (optional)
+        return self._run(a, b)
+
+# Use it
+tool = MultiplyTool()
+result = tool.invoke({"a": 3, "b": 5})
+print(result)   # 15
+```
+
+> This is the most powerful but also the most verbose. Use when you need async or advanced customisation.
+
+---
+
+### 6. Toolkits – Grouping Related Tools
+
+**Why?** Reusability and organisation. Create a toolkit containing multiple related tools.
+
+```python
+from langchain_core.tools import tool
+from langchain_community.tools import BaseToolkit
+
+# Create individual tools
+@tool
+def add(a: int, b: int) -> int:
+    """Add two numbers."""
+    return a + b
+
+@tool
+def multiply(a: int, b: int) -> int:
+    """Multiply two numbers."""
+    return a * b
+
+# Define a toolkit
+class MathToolkit(BaseToolkit):
+    def get_tools(self):
+        return [add, multiply]
+
+# Use the toolkit
+math_tools = MathToolkit().get_tools()
+for tool in math_tools:
+    print(tool.name, ":", tool.description)
+    # You can also invoke each tool
+```
+
+> LangChain provides many built‑in toolkits (e.g., `GmailToolkit`, `SlackToolkit`, `SQLDatabaseToolkit`).
+
+---
+
+## 🔁 Summary Table – Three Ways to Create Custom Tools
+
+| Method | Pros | Cons | When to use |
+|--------|------|------|-------------|
+| **`@tool` decorator** | Very simple, minimal code | Less strict (only type hints) | Most cases, prototyping |
+| **`StructuredTool.from_function`** | Pydantic validation, explicit schema | Slightly more code | Production, strict input requirements |
+| **Subclass `BaseTool`** | Full control, async support, stateful | Most verbose | Advanced use, async apps, deep customisation |
+
+---
+
+## 🔧 What’s Next?
+
+- **Tool calling** – how to make an LLM *decide* which tool to call and with what arguments.
+- **Agents** – combine an LLM with one or more tools to create a system that can reason, plan, and act autonomously.
+
+> **Final takeaway:** Tools are the bridge between an LLM’s language ability and real‑world actions. LangChain makes it easy to use built‑in tools and create your own. The next step is connecting tools to an LLM – that’s **tool calling** and **agents**.
+
+---
+
+### Important Links
+
 - [Tools](https://docs.langchain.com/oss/python/langchain/tools)
 
 - [Tool Integrations](https://docs.langchain.com/oss/python/integrations/tools)
+
+---
+
+## 19. Tool Calling in LangChain (58:46)
 
 summaries this genai tutorial transcript in simple words with all detail, make note of all important pointers and also explain each important concepts with basic code examples
 
