@@ -5545,4 +5545,4 @@ print(final.content)   # "10 USD = 853.41 INR" (real‑time)
 
 summaries this genai tutorial transcript in simple words with all detail, make note of all important pointers and also explain each important concepts with basic code examples
 
-Imp Command - `pip install -r ../09_youtube_chatbot_using_rag/requirements.txt`
+Imp Command - `pip install -r ../10_tools/requirements.txt`
