@@ -5338,6 +5338,211 @@ for tool in math_tools:
 
 ## 19. Tool Calling in LangChain (58:46)
 
+## 🧑‍🏫 What This lecture Covers
+
+This lecture continues the AI Agents series. After explaining **tools** in the previous video, he now explains **how an LLM interacts with tools** – the process of **tool binding, tool calling, and tool execution**. He then builds a real‑world currency conversion application using two custom tools and an LLM, and finally clarifies that this is **not yet a full AI agent** (because it lacks full autonomy – the programmer manually orchestrates the steps). The next video will build a truly autonomous agent.
+
+---
+
+## ✅ Important Pointers (Key Takeaways)
+
+1. **LLMs can think (reason) and speak (generate text), but cannot act.** Tools give them “hands and legs” – the ability to perform actions like web search, shell commands, API calls, etc.
+
+2. **Tool binding** = registering a tool with an LLM so that the LLM knows:
+   - What tools are available
+   - What each tool does (from its description)
+   - What input format the tool expects (from its schema)
+
+3. **Tool calling** = the LLM decides (during a conversation) that it needs a tool to answer the query. It then generates a **structured output** (not plain text) that contains:
+   - The name of the tool to call
+   - The arguments to pass to that tool
+
+4. **Important:** The LLM does **not** execute the tool. It only **suggests** the tool and the arguments. The actual execution is done by the programmer (or by LangChain’s agent framework). This is a safety feature.
+
+5. **Tool execution** = the programmer takes the tool call suggestion, invokes the actual Python function with the suggested arguments, and gets a result. This result is wrapped in a **ToolMessage**.
+
+6. **ToolMessage** is a special message type that can be sent back to the LLM as part of the conversation history, so the LLM can see the result of the tool and generate the final answer.
+
+7. **Injected tool arguments** – you can mark an argument as `InjectedToolArg` so that the LLM does **not** try to fill it. Instead, you (the programmer) inject the value after running previous tools. This is essential for chaining multiple tools where the output of one tool becomes the input of another.
+
+8. **A true AI agent** is **autonomous** – it breaks down a problem into steps, decides which tools to call in which order, and executes them without manual intervention. The code in this video is **not** an agent because the programmer manually wrote the orchestration logic.
+
+---
+
+## 📚 Detailed Concepts with Code Examples
+
+### 1. Tool Binding – Connecting a Tool to an LLM
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_core.tools import tool
+
+# Create a simple tool
+@tool
+def multiply(a: int, b: int) -> int:
+    """Multiply two numbers."""
+    return a * b
+
+# Create LLM and bind the tool
+llm = ChatOpenAI(model="gpt-3.5-turbo")
+llm_with_tools = llm.bind_tools([multiply])
+```
+
+> Now the LLM knows about the `multiply` tool – its name, description, and input schema.
+
+---
+
+### 2. Tool Calling – LLM Requests a Tool
+
+```python
+response = llm_with_tools.invoke("What is 8 * 7?")
+# The response is an AIMessage. It has a `tool_calls` attribute.
+print(response.tool_calls)
+# Output: [{'name': 'multiply', 'args': {'a': 8, 'b': 7}, 'id': '...'}]
+```
+
+> The LLM does **not** compute the answer. It simply says: “Use the multiply tool with a=8, b=7”. The content of the message is empty.
+
+---
+
+### 3. Tool Execution – Running the Tool Manually
+
+```python
+# Assuming we have the multiply tool defined
+tool_call = response.tool_calls[0]   # get the first tool call
+result = multiply.invoke(tool_call["args"])   # execute
+print(result)   # 56
+```
+
+> The result is a plain number (or whatever the tool returns). To give it back to the LLM, we wrap it in a **ToolMessage**.
+
+```python
+from langchain_core.messages import ToolMessage
+
+tool_message = ToolMessage(content=str(result), tool_call_id=tool_call["id"])
+```
+
+---
+
+### 4. Full Conversation Flow with History
+
+```python
+from langchain_core.messages import HumanMessage, AIMessage
+
+# Step 1: Human asks a question
+messages = [HumanMessage(content="What is 3 * 10?")]
+
+# Step 2: LLM suggests a tool call
+ai_msg = llm_with_tools.invoke(messages)
+messages.append(ai_msg)   # add AI message to history
+
+# Step 3: Execute the tool call
+tool_call = ai_msg.tool_calls[0]
+tool_result = multiply.invoke(tool_call["args"])
+tool_msg = ToolMessage(content=str(tool_result), tool_call_id=tool_call["id"])
+messages.append(tool_msg)
+
+# Step 4: LLM generates final answer using the tool result
+final_answer = llm.invoke(messages)
+print(final_answer.content)   # "The product of 3 and 10 is 30."
+```
+
+> This is the manual orchestration pattern – the programmer controls the order of tool execution.
+
+---
+
+### 5. Currency Conversion Example (Two Tools, Injected Argument)
+
+**Problem:** Convert 10 USD to INR in real time.
+
+**Two tools:**
+1. `get_conversion_factor(base_currency, target_currency)` – calls a live API to get the current exchange rate.
+2. `convert(base_currency_value, conversion_rate)` – multiplies to get the converted amount.
+
+But the second tool needs the `conversion_rate` from the first tool. The LLM cannot know that rate (it’s live data). So we mark `conversion_rate` as an **injected argument**.
+
+```python
+from typing import Annotated
+from langchain_core.tools import InjectedToolArg
+
+@tool
+def convert(base_currency_value: int, conversion_rate: Annotated[float, InjectedToolArg]) -> float:
+    """Convert using a given conversion rate."""
+    return base_currency_value * conversion_rate
+```
+
+Now, when the LLM suggests a call to `convert`, it will **not** fill the `conversion_rate` argument. The programmer injects it later.
+
+**The orchestration code (simplified from the video):**
+
+```python
+# 1. Bind both tools
+llm_with_tools = llm.bind_tools([get_conversion_factor, convert])
+
+# 2. User query
+messages = [HumanMessage(content="Convert 10 USD to INR")]
+
+# 3. LLM suggests two tool calls (first to get rate, second to convert)
+ai_msg = llm_with_tools.invoke(messages)
+# ai_msg.tool_calls[0] -> get_conversion_factor with args {"base": "USD", "target": "INR"}
+# ai_msg.tool_calls[1] -> convert with args {"base_currency_value": 10} (no rate)
+
+# 4. Manually execute first tool, extract rate
+tool_call1 = ai_msg.tool_calls[0]
+rate_result = get_conversion_factor.invoke(tool_call1["args"])
+rate = extract_rate(rate_result)   # parse API response
+
+# 5. Inject the rate into second tool call's arguments
+tool_call2 = ai_msg.tool_calls[1]
+tool_call2["args"]["conversion_rate"] = rate   # inject
+
+# 6. Execute second tool
+converted = convert.invoke(tool_call2["args"])
+
+# 7. Add all messages to history and get final answer
+messages.append(ai_msg)
+messages.append(ToolMessage(content=str(rate_result), tool_call_id=tool_call1["id"]))
+messages.append(ToolMessage(content=str(converted), tool_call_id=tool_call2["id"]))
+final = llm.invoke(messages)
+print(final.content)   # "10 USD = 853.41 INR" (real‑time)
+```
+
+> This is still **manual** – the programmer decides the order and does the injection. A true agent would do this automatically.
+
+---
+
+### 6. What Makes a True AI Agent?
+
+| **This code (manual)** | **True AI Agent** |
+|------------------------|--------------------|
+| Programmer writes the loop, decides tool order | Agent autonomously plans steps |
+| Programmer injects values manually | Agent uses the output of one tool as input to the next |
+| No built‑in state management | Agent maintains conversation state and iterates |
+| Uses `bind_tools` + manual execution | LangChain’s `AgentExecutor` or LangGraph handles everything |
+
+---
+
+## 🔁 Summary Table – Tool Concepts
+
+| Concept | What it does | Who does it |
+|---------|--------------|--------------|
+| **Tool Binding** | Registers a tool with the LLM so the LLM knows about it | Programmer calls `llm.bind_tools([...])` |
+| **Tool Calling** | LLM decides to use a tool and returns a structured `tool_calls` object | LLM |
+| **Tool Execution** | Running the actual Python function (tool) with arguments | Programmer (or agent framework) |
+| **ToolMessage** | Wraps the tool result to send back to the LLM | Programmer |
+| **InjectedToolArg** | Marks an argument that the LLM should **not** fill; the programmer will inject it later | Programmer (when defining the tool) |
+
+---
+
+## 📌 Final Takeaway
+
+> **Tool calling is the mechanism by which an LLM requests to use an external tool, but it does not execute it.** The programmer (or an agent framework) must execute the tool and feed the result back to the LLM. This design keeps control and safety in the programmer’s hands.  
+> **A true AI agent** automates the entire process – planning, tool selection, execution, and result handling – without manual intervention. That’s coming in the next video.
+
+---
+
+## 20. Building end-to-end AI Agent in LangChain (01:12:46)
+
 summaries this genai tutorial transcript in simple words with all detail, make note of all important pointers and also explain each important concepts with basic code examples
 
 Imp Command - `pip install -r ../09_youtube_chatbot_using_rag/requirements.txt`
